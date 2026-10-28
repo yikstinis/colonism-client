@@ -1,0 +1,884 @@
+{
+  "scale": 2,
+  "view": "topdown",
+  "characters": {
+    "hero": {
+      "image": "hero.png",
+      "frame": [
+        78,
+        78
+      ],
+      "anchor": [
+        39,
+        57
+      ],
+      "rows": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "shadow": {
+        "image": "hero_shadow.png",
+        "frame": [
+          96,
+          80
+        ],
+        "anchor": [
+          48,
+          52
+        ]
+      },
+      "animations": {
+        "idle": {
+          "start": 0,
+          "frames": 6,
+          "fps": 2.5
+        },
+        "walk": {
+          "start": 6,
+          "frames": 20,
+          "fps": 40
+        },
+        "roll": {
+          "start": 26,
+          "frames": 14,
+          "fps": 28
+        },
+        "back": {
+          "start": 40,
+          "frames": 12,
+          "fps": 24
+        },
+        "strafeL": {
+          "start": 52,
+          "frames": 12,
+          "fps": 26.666666666666664
+        },
+        "strafeR": {
+          "start": 64,
+          "frames": 12,
+          "fps": 26.666666666666664
+        },
+        "pick": {
+          "start": 76,
+          "frames": 12,
+          "fps": 20
+        },
+        "crouch": {
+          "start": 88,
+          "frames": 4,
+          "fps": 2
+        },
+        "sneak": {
+          "start": 92,
+          "frames": 8,
+          "fps": 10
+        },
+        "sneakBack": {
+          "start": 100,
+          "frames": 8,
+          "fps": 10
+        },
+        "sneakL": {
+          "start": 108,
+          "frames": 8,
+          "fps": 10
+        },
+        "sneakR": {
+          "start": 116,
+          "frames": 8,
+          "fps": 10
+        }
+      }
+    },
+    "hero_pack": {
+      "image": "hero_pack.png",
+      "frame": [
+        78,
+        78
+      ],
+      "anchor": [
+        39,
+        57
+      ],
+      "rows": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "shadow": {
+        "image": "hero_pack_shadow.png",
+        "frame": [
+          96,
+          80
+        ],
+        "anchor": [
+          48,
+          52
+        ]
+      },
+      "animations": {
+        "idle": {
+          "start": 0,
+          "frames": 6,
+          "fps": 2.5
+        },
+        "walk": {
+          "start": 6,
+          "frames": 20,
+          "fps": 40
+        },
+        "roll": {
+          "start": 26,
+          "frames": 14,
+          "fps": 28
+        },
+        "back": {
+          "start": 40,
+          "frames": 12,
+          "fps": 24
+        },
+        "strafeL": {
+          "start": 52,
+          "frames": 12,
+          "fps": 26.666666666666664
+        },
+        "strafeR": {
+          "start": 64,
+          "frames": 12,
+          "fps": 26.666666666666664
+        },
+        "pick": {
+          "start": 76,
+          "frames": 12,
+          "fps": 20
+        },
+        "crouch": {
+          "start": 88,
+          "frames": 4,
+          "fps": 2
+        },
+        "sneak": {
+          "start": 92,
+          "frames": 8,
+          "fps": 10
+        },
+        "sneakBack": {
+          "start": 100,
+          "frames": 8,
+          "fps": 10
+        },
+        "sneakL": {
+          "start": 108,
+          "frames": 8,
+          "fps": 10
+        },
+        "sneakR": {
+          "start": 116,
+          "frames": 8,
+          "fps": 10
+        },
+        "slash": {
+          "start": 124,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "slashRun": {
+          "start": 134,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "slashBack": {
+          "start": 144,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "slashL": {
+          "start": 154,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "slashR": {
+          "start": 164,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "aimIn": {
+          "start": 174,
+          "frames": 4,
+          "fps": 40
+        },
+        "aimOut": {
+          "start": 178,
+          "frames": 4,
+          "fps": 33.333333333333336
+        },
+        "fire-": {
+          "start": 182,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            0.341,
+            0.808,
+            1.395
+          ]
+        },
+        "fire": {
+          "start": 192,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            0.018,
+            0.934,
+            1.395
+          ]
+        },
+        "fire+": {
+          "start": 202,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            -0.337,
+            0.929,
+            1.395
+          ]
+        },
+        "fireRun-": {
+          "start": 212,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            0.369,
+            0.969,
+            1.395
+          ]
+        },
+        "fireRun": {
+          "start": 222,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            0.042,
+            1.1,
+            1.395
+          ]
+        },
+        "fireRun+": {
+          "start": 232,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            -0.318,
+            1.098,
+            1.395
+          ]
+        },
+        "fireBack-": {
+          "start": 242,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            0.364,
+            0.866,
+            1.406
+          ]
+        },
+        "fireBack": {
+          "start": 252,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            0.037,
+            0.996,
+            1.406
+          ]
+        },
+        "fireBack+": {
+          "start": 262,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            -0.322,
+            0.992,
+            1.406
+          ]
+        },
+        "fireStrafeL-": {
+          "start": 272,
+          "frames": 10,
+          "fps": 22.22222222222222,
+          "muzzle": [
+            0.382,
+            0.866,
+            1.405
+          ]
+        },
+        "fireStrafeL": {
+          "start": 282,
+          "frames": 10,
+          "fps": 22.22222222222222,
+          "muzzle": [
+            0.055,
+            0.996,
+            1.405
+          ]
+        },
+        "fireStrafeL+": {
+          "start": 292,
+          "frames": 10,
+          "fps": 22.22222222222222,
+          "muzzle": [
+            -0.304,
+            0.992,
+            1.405
+          ]
+        },
+        "fireStrafeR-": {
+          "start": 302,
+          "frames": 10,
+          "fps": 22.22222222222222,
+          "muzzle": [
+            0.347,
+            0.866,
+            1.406
+          ]
+        },
+        "fireStrafeR": {
+          "start": 312,
+          "frames": 10,
+          "fps": 22.22222222222222,
+          "muzzle": [
+            0.02,
+            0.996,
+            1.406
+          ]
+        },
+        "fireStrafeR+": {
+          "start": 322,
+          "frames": 10,
+          "fps": 22.22222222222222,
+          "muzzle": [
+            -0.339,
+            0.992,
+            1.406
+          ]
+        },
+        "cslash": {
+          "start": 332,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "cslashRun": {
+          "start": 342,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "cslashBack": {
+          "start": 352,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "cslashL": {
+          "start": 362,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "cslashR": {
+          "start": 372,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "caimIn": {
+          "start": 382,
+          "frames": 4,
+          "fps": 40
+        },
+        "caimOut": {
+          "start": 386,
+          "frames": 4,
+          "fps": 33.333333333333336
+        },
+        "cfire-": {
+          "start": 390,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            0.347,
+            0.879,
+            1.101
+          ]
+        },
+        "cfire": {
+          "start": 400,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            0.021,
+            1.005,
+            1.101
+          ]
+        },
+        "cfire+": {
+          "start": 410,
+          "frames": 10,
+          "fps": 20,
+          "muzzle": [
+            -0.336,
+            1.001,
+            1.101
+          ]
+        },
+        "cfireRun-": {
+          "start": 420,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            0.369,
+            0.948,
+            1.083
+          ]
+        },
+        "cfireRun": {
+          "start": 430,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            0.042,
+            1.079,
+            1.083
+          ]
+        },
+        "cfireRun+": {
+          "start": 440,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            -0.318,
+            1.077,
+            1.083
+          ]
+        },
+        "cfireBack-": {
+          "start": 450,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            0.364,
+            0.901,
+            1.102
+          ]
+        },
+        "cfireBack": {
+          "start": 460,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            0.037,
+            1.03,
+            1.102
+          ]
+        },
+        "cfireBack+": {
+          "start": 470,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            -0.322,
+            1.027,
+            1.102
+          ]
+        },
+        "cfireStrafeL-": {
+          "start": 480,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            0.382,
+            0.901,
+            1.102
+          ]
+        },
+        "cfireStrafeL": {
+          "start": 490,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            0.055,
+            1.03,
+            1.102
+          ]
+        },
+        "cfireStrafeL+": {
+          "start": 500,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            -0.304,
+            1.027,
+            1.102
+          ]
+        },
+        "cfireStrafeR-": {
+          "start": 510,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            0.347,
+            0.901,
+            1.102
+          ]
+        },
+        "cfireStrafeR": {
+          "start": 520,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            0.02,
+            1.03,
+            1.102
+          ]
+        },
+        "cfireStrafeR+": {
+          "start": 530,
+          "frames": 10,
+          "fps": 12.5,
+          "muzzle": [
+            -0.339,
+            1.027,
+            1.102
+          ]
+        }
+      }
+    },
+    "bug": {
+      "image": "bug.png",
+      "frame": [
+        72,
+        72
+      ],
+      "anchor": [
+        36,
+        48
+      ],
+      "rows": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "animations": {
+        "idle": {
+          "start": 0,
+          "frames": 4,
+          "fps": 6
+        },
+        "walk": {
+          "start": 4,
+          "frames": 8,
+          "fps": 20
+        }
+      },
+      "shadow": {
+        "image": "bug_shadow.png",
+        "frame": [
+          96,
+          72
+        ],
+        "anchor": [
+          48,
+          40
+        ]
+      }
+    }
+  },
+  "objects": {
+    "pod": {
+      "image": "pod.png",
+      "frame": [
+        204,
+        156
+      ],
+      "anchor": [
+        120,
+        79
+      ],
+      "decal": {
+        "image": "pod_decal.png",
+        "frame": [
+          252,
+          228
+        ],
+        "anchor": [
+          126,
+          114
+        ]
+      },
+      "smoke": [
+        [
+          1.4311019828216098,
+          -0.18553607178555545,
+          -0.018425005575070142
+        ],
+        [
+          0.9772279159429339,
+          -1.0618469503793933,
+          0.017962579764938924
+        ],
+        [
+          0.06735646299932453,
+          -1.4387546163935223,
+          0.09090797928976715
+        ],
+        [
+          -0.8705856145562102,
+          -1.1389935051567601,
+          0.16610383179957905
+        ],
+        [
+          -1.3954695019000667,
+          -0.30354595118032274,
+          0.2081843528914035
+        ],
+        [
+          0.17261573897341304,
+          0,
+          2.153091685613658
+        ]
+      ],
+      "fires": [
+        [
+          -1.74,
+          0.66,
+          0.18
+        ],
+        [
+          1.68,
+          0.42,
+          0.18
+        ],
+        [
+          1.32,
+          1.44,
+          0.18
+        ]
+      ]
+    },
+    "backpack": {
+      "image": "backpack.png",
+      "frame": [
+        48,
+        40
+      ],
+      "anchor": [
+        24,
+        22
+      ]
+    },
+    "bed": {
+      "image": "bed.png",
+      "frame": [
+        130,
+        110
+      ],
+      "anchor": [
+        65,
+        62
+      ]
+    },
+    "stand": {
+      "image": "stand.png",
+      "frame": [
+        70,
+        60
+      ],
+      "anchor": [
+        35,
+        32
+      ]
+    },
+    "bedding": {
+      "image": "bedding.png",
+      "frame": [
+        260,
+        230
+      ],
+      "anchor": [
+        130,
+        115
+      ],
+      "decal": {
+        "image": "bedding_decal.png",
+        "frame": [
+          250,
+          230
+        ],
+        "anchor": [
+          125,
+          115
+        ]
+      },
+      "fires": [
+        [
+          0.9396038754532634,
+          -0.32671785570000345,
+          0.1
+        ],
+        [
+          1.284805657548062,
+          -0.32074042827883803,
+          0.1
+        ]
+      ],
+      "smoke": [
+        [
+          1.0396038754532635,
+          -0.32671785570000345,
+          0.2
+        ],
+        [
+          1.384805657548062,
+          -0.32074042827883803,
+          0.2
+        ]
+      ]
+    },
+    "rocket": {
+      "image": "rocket.png",
+      "frame": [
+        60,
+        70
+      ],
+      "anchor": [
+        30,
+        50
+      ],
+      "tail": [
+        -0.06187499999999999,
+        -0.4079625,
+        0.714470958122162
+      ]
+    },
+    "crater": {
+      "image": "crater.png",
+      "frame": [
+        240,
+        210
+      ],
+      "anchor": [
+        120,
+        105
+      ]
+    },
+    "bag": {
+      "image": "bag.png",
+      "frame": [
+        60,
+        80
+      ],
+      "anchor": [
+        30,
+        58
+      ]
+    },
+    "bottles": {
+      "image": "bottles.png",
+      "frame": [
+        70,
+        80
+      ],
+      "anchor": [
+        35,
+        58
+      ],
+      "frames": 16,
+      "spots": [
+        [
+          -0.36,
+          0.01
+        ],
+        [
+          -0.12,
+          -0.01
+        ],
+        [
+          0.12,
+          0.01
+        ],
+        [
+          0.36,
+          -0.01
+        ]
+      ],
+      "top": 0.32,
+      "shadow": {
+        "image": "bottles_shadow.png",
+        "frame": [
+          90,
+          70
+        ],
+        "anchor": [
+          45,
+          48
+        ]
+      }
+    },
+    "crater_small": {
+      "image": "crater_small.png",
+      "frame": [
+        80,
+        72
+      ],
+      "anchor": [
+        40,
+        36
+      ]
+    },
+    "bag_stand": {
+      "image": "bag_stand.png",
+      "frame": [
+        60,
+        80
+      ],
+      "anchor": [
+        30,
+        58
+      ]
+    },
+    "tent": {
+      "image": "tent.png",
+      "frame": [
+        600,
+        460
+      ],
+      "anchor": [
+        300,
+        250
+      ],
+      "shadow": {
+        "image": "tent_shadow.png",
+        "frame": [
+          600,
+          460
+        ],
+        "anchor": [
+          300,
+          250
+        ]
+      }
+    }
+  }
+}

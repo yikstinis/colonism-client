@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Colonism</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;700&display=swap" rel="stylesheet" />
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    canvas { position: fixed; top: 0; left: 0; display: block; }
+    #game { width: 100vw; height: 100vh; }
+    #ground { image-rendering: pixelated; }
+    #hud, .quest {
+      position: fixed; top: 12px; left: 12px; color: #fff; font: 300 14px "Open Sans", Arial, sans-serif;
+      letter-spacing: 0.02em; background: linear-gradient(#14101cdd, #0a0810dd);
+      border: 1px solid #4a3f2a; box-shadow: inset 0 0 0 1px #000, 0 0 12px #000;
+      padding: 7px 12px; pointer-events: none;
+    }
+    /* The quest at the top right, a card like the labels over things (see render/labels.js): a
+       see-through black plate, a thick white edge on the left, rounded on the right */
+    .quest {
+      left: auto; top: 18px; right: 18px; max-width: 260px; padding: 6px 11px 7px 10px;
+      font: 300 12px "Open Sans", Arial, sans-serif; letter-spacing: 0; line-height: 16px;
+      background: rgba(0, 0, 0, 0.7); border: 1px solid rgba(255, 255, 255, 0.35); border-left: 3px solid #fff;
+      border-radius: 0 5px 5px 0; box-shadow: none;
+    }
+    .quest .title { font-weight: 700; }
+    .quest .step { margin-top: 2px; color: #aaa; }
+    .quest .step.done, .quest.done .title { color: #fff; }
+    .quest .way { margin-left: 3px; color: #666; }
+    .quest .way.on, .quest .pct { color: #fff; }
+    .quest .goal { color: #e6be5a; } /* what it's after: its name over it in the world is in gold too */
+    /* The main quest's: edged in gold */
+    .quest.main { border-color: rgba(230, 190, 90, 0.6); border-left-color: #e6be5a; box-shadow: 0 0 10px rgba(230, 190, 90, 0.15); }
+    /* A quest done goes: it fades, then slides up off the screen; the next slides in from the right
+       in its place (see quests.js) */
+    .quest { transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s; }
+    .quest.faded { opacity: 0.4; }
+    .quest.gone { opacity: 0; transition: transform 0.5s ease-in, opacity 0.5s ease-in; }
+    .quest.coming { transform: translateX(calc(100% + 40px)); transition: none; }
+  </style>
+</head>
+<body>
+  <canvas id="ground"></canvas>
+  <canvas id="game"></canvas>
+  <!-- The controls hint is hidden for now (drop `hidden` to show it) -->
+  <div id="hud" hidden>Connecting…</div>
+  <div id="quest" class="quest"></div>
+  <script type="module" src="/client.js"></script>
+</body>
+</html>
