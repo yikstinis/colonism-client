@@ -236,7 +236,7 @@ export const STRUCTURES = { label: 'Safe space', home: toSphere(northChart(backp
 Object.assign(STRUCTURES, chartPoint(CHART0, STRUCTURES.home)); // (its x, y on the chart, kept there as the objects')
 // The safe space's campfire, burning right there: low (struck and shot over), not walked through
 const CAMPFIRE_SOLID = { x: STRUCTURES.x, y: STRUCTURES.y, r: 0.55 * UNITS_PER_M, of: 'campfire' };
-OBJECTS.push({ name: 'campfire', x: STRUCTURES.x, y: STRUCTURES.y, label: STRUCTURES.label, solid: CAMPFIRE_SOLID, heals: true, say: 'A prehistoric way to keep warm... Barbaric, but it works!' });
+OBJECTS.push({ name: 'campfire', x: STRUCTURES.x, y: STRUCTURES.y, label: STRUCTURES.label, solid: CAMPFIRE_SOLID, heals: true, say: 'A prehistoric way to keep warm... Barbaric, but it works! Where does he get wood?' });
 OBSTACLES.push(CAMPFIRE_SOLID);
 // By it, an automatic turret: a machine gun on a tripod that turns to the nearest bug in TURRET_RANGE
 // and fires at it (see client.js); tall: it stops shots
@@ -366,7 +366,7 @@ export function startRoll(p, dx, dy) {
   return true;
 }
 
-export function updateRoll(p, dt) {
+export function updateRoll(p, dt, cooldown = ROLL_COOLDOWN) { // (cooldown: the wait after it, seconds: shorter with a talent)
   if (!p.roll) {
     p.rollCooldown = Math.max(0, (p.rollCooldown ?? 0) - dt);
     return false;
@@ -376,7 +376,7 @@ export function updateRoll(p, dt) {
   p.roll.t += dt;
   if (p.roll.t >= ROLL_TIME) {
     p.roll = null;
-    p.rollCooldown = ROLL_COOLDOWN;
+    p.rollCooldown = cooldown;
   }
   return true;
 }

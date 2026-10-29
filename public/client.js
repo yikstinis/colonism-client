@@ -11,7 +11,7 @@ import { createSpeech } from '/render/speech.js';
 import { createGuide } from '/render/guide.js';
 import { createReach } from '/render/reach.js';
 import { createHotbar } from '/render/hotbar.js';
-import { TALENTS, createTalents } from '/render/talents.js';
+import { TALENTS, TALENT_POINTS, createTalents } from '/render/talents.js';
 import { lifeBar, RING_STEP } from '/render/life.js';
 import { createJournal } from '/render/journal.js';
 import { MARGIN as GLOBE_MARGIN, RADIUS as GLOBE_RADIUS, createGlobe } from '/render/globe.js';
@@ -65,7 +65,7 @@ let medkits = MEDKITS, medkitCool = 0; // (seconds till the next can be)
 // point to spend (T; see render/talents.js). He starts at the first; the punching bag cut to bits
 // gives him the second at once. He goes no higher than there are talents for (MAX_LEVEL)
 const xpFor = (level) => 50 * level;
-const MAX_LEVEL = 1 + TALENTS.length;
+const MAX_LEVEL = 1 + TALENT_POINTS; // (a level for each point the talents can take, all their ranks)
 let xp = 0, level = 1, points = 0, talentsOpen = false;
 const me = { hp: HP, x: SPAWN.x, y: SPAWN.y, dir: 0, moving: false, gait: 'run', roll: null, rollCooldown: 0, pick: null, squat: 0, slash: null, fire: null, crouch: false, animOffset: 0, stride: 0.7, sprite: 'hero' };
 const objects = OBJECTS.filter((o) => !o.later); // what still lies on the map (picked up things are removed)
@@ -632,6 +632,11 @@ let drill = 'off';
 // The rounds: counted once the drill's done: in the magazine; full
 // magazines to put in he has no end of
 const MAG = 10; // rounds in one
+// The knife's wait after a slash, the gun's reload and the wait after a roll, each 1% shorter for each rank of its talent (of
+// what's left of it each time: never down to nothing)
+const knifeWait = () => SLASH_COOLDOWN * 0.99 ** talents.rank('quickknife');
+const reloadTime = () => RELOAD_TIME * 0.99 ** talents.rank('quickreload');
+const rollWait = () => ROLL_COOLDOWN * 0.99 ** talents.rank('quickroll'); // (the roll's too)
 const RELOAD_SOUNDS = [[0.55, 'in'], [1, 'bolt']]; // a reload's sounds, at how far through it (0..1): the new one in, the bolt (as it's done: he can fire then)
 // A reload started: the magazine out at once (or after seconds), heard then whether or not it goes on yet
 // (running, it waits)
@@ -780,13 +785,25 @@ function inSlash(x, y, r) {
 }
 
 // ---------- The turret by the campfire: it turns to the nearest bug in TURRET_RANGE it can see and,
-// once its gun's on it, fires at it, a round every TURRET_EVERY: each a point off its life ----------
+// once its gun's on it, fires at it, a round every TURRET_EVERY: each a point off its life. The first
+// time he comes up to it, TURRET_WAVE bugs come for him out of sight ----------
 
 const turret = OBJECTS.find((o) => o.name === 'turret'); // (its aim: where its gun points, radians; frame: its sprite's for that)
 const TURRET_TURN = 5, TURRET_ON = 0.12, TURRET_EVERY = 0.16; // radians a second it turns; how close to on it, to fire; seconds between rounds
 let turretCool = 0;
 
+const TURRET_WAVE = 5, TURRET_NEAR = 4 * UNITS_PER_M; // bugs that come for him out of sight the first time he comes up to it (meters from it)
+let turretMet = false;
+
 function updateTurret(dt) {
+  // The first time he comes up to it, a pack comes for him out of the dark (for it to show what it does)
+  if (!turretMet && Math.hypot(turret.x - me.x, turret.y - me.y) < TURRET_NEAR) {
+    turretMet = true;
+    for (let i = 0; i < TURRET_WAVE; i++) {
+      const was = bugs.length;
+      for (let tries = 0; tries < 8 && bugs.length === was; tries++) spawnPack(1); // (each from wherever's clear, out of sight)
+    }
+  }
   turretCool = Math.max(0, turretCool - dt);
   let target = null, best = Infinity;
   for (const b of bugs) { // (the nearest, with nothing solid in the way)
@@ -1218,7 +1235,7 @@ function step(real) {
   me.knifeCool = Math.max(0, (me.knifeCool ?? 0) - dt); // (seconds till the knife's ready again: a slash and SLASH_COOLDOWN after it)
   if (attackPressed && free && !drilling && !me.knifeCool) {
     me.slash = { t: 0 };
-    me.knifeCool = SLASH_TIME + SLASH_COOLDOWN;
+    me.knifeCool = SLASH_TIME + knifeWait();
     me.animOffset = -now;
     sounds.swish(SLASH_TIME * SLASH_CUT);
   }
@@ -1262,11 +1279,11 @@ function step(real) {
   // Reloading goes on while he stands (on the move too, with the talent; running without it, it waits
   // where it is): with the trigger held through it, he fires on once it's done
   if (ammo && ammo.reload !== null && (!me.moving || talents.has('runreload'))) {
-    const was = ammo.reload / RELOAD_TIME;
+    const was = ammo.reload / reloadTime();
     ammo.reload += dt;
-    const k = ammo.reload / RELOAD_TIME; // (its sounds as it gets to them)
+    const k = ammo.reload / reloadTime(); // (its sounds as it gets to them)
     for (const [at, part] of RELOAD_SOUNDS) if (was < at && k >= at) sounds.reload(part);
-    if (ammo.reload >= RELOAD_TIME) {
+    if (ammo.reload >= reloadTime()) {
       Object.assign(ammo, { mag: MAG, reload: null });
       me.animOffset = -now; // (the gait's clock from the start again: the reload's legs end where a cycle starts)
     }
@@ -1288,7 +1305,7 @@ function step(real) {
   // roll (startRoll turns him). Without a cursor he looks where he runs.
   const aim = aimDirection();
   if (me.pick) updatePick(dt);
-  else if (!updateRoll(me, dt)) {
+  else if (!updateRoll(me, dt, rollWait())) {
     if (me.squat > 0) { if (near) me.dir = dirFromVector(near.x - me.x, near.y - me.y); } // turned to it
     else if (aim) me.dir = dirFromVector(aim.dx, aim.dy);
     else if (me.moving) me.dir = dirFromVector(dx, dy);
@@ -1476,7 +1493,7 @@ function updateDebug() {
     row('talents', TALENTS.filter((tl) => talents.has(tl.id)).map((tl) => tl.id).join(', ') || '—'),
     row('backpack', show(hasBackpack)),
     row('medkits', `${medkits} / ${MEDKITS}`),
-    row('ammo', ammo ? `${ammo.mag} / ${MAG}${ammo.reload !== null ? `, reloading ${show(ammo.reload)} / ${show(RELOAD_TIME)} s` : ''}` : '—'),
+    row('ammo', ammo ? `${ammo.mag} / ${MAG}${ammo.reload !== null ? `, reloading ${show(ammo.reload)} / ${show(reloadTime())} s` : ''}` : '—'),
     '', `BUGS ${bugs.length}`,
     ...bugs.slice(0, DEBUG_BUGS).map((b) => `${show(Math.hypot(b.x - me.x, b.y - me.y) / UNITS_PER_M).padStart(6)} m  life ${show(b.life)}  ${b.moving ? 'moving' : 'still'}  dash ${show(b.dash)}  bite ${show(b.bite)}`),
     ...(bugs.length > DEBUG_BUGS ? [`  … ${bugs.length - DEBUG_BUGS} more`] : []),
@@ -1529,7 +1546,7 @@ function render(now, dt, talkDt = dt) {
       me.slash ? me.slash.t / SLASH_TIME : null, dt, !!me.roll, toScreenX(shotRange()), // gone while rolling
       (a, px) => toScreenX(aimHit(Math.cos(a), Math.sin(a), px / toScreenX(1))), // stopped by solid things, and the bottles
       shotSpread(), me.fire?.phase === 'loop' ? 0.5 + 0.5 * Math.exp(-(clock - lastShotAt) / 90) : 0, // the cone lit while firing, flaring with each round
-      Math.min(1, (me.knifeCool ?? 0) / SLASH_COOLDOWN)); // the knife getting ready again: the sector empty through the slash, then filling back in
+      Math.min(1, (me.knifeCool ?? 0) / knifeWait())); // the knife getting ready again: the sector empty through the slash, then filling back in
     // The rounds left in the magazine, on the sand along the aim, just to the right of its line (as he
     // looks): a square for each, in a row (they run down from the far end;
     // reloading, they fill back in from the near end, pale red to white; the empty ones blink pale red
@@ -1541,7 +1558,7 @@ function render(now, dt, talkDt = dt) {
       ctx.save();
       ctx.translate(camX + toScreenX(me.x), camY + toScreenY(me.y));
       ctx.rotate(angle); // x on along the aim, y to its right
-      const blink = 0.5 + 0.5 * Math.sin((now / 1000) * Math.PI * 5), k = ammo.reload !== null ? ammo.reload / RELOAD_TIME : null;
+      const blink = 0.5 + 0.5 * Math.sin((now / 1000) * Math.PI * 5), k = ammo.reload !== null ? ammo.reload / reloadTime() : null;
       const full = k !== null ? Math.floor(MAG * k) : ammo.mag; // (reloading: the ones in already)
       const on = k !== null ? `rgba(255, ${Math.round(140 + 115 * k)}, ${Math.round(120 + 135 * k)}, ${0.45 + 0.15 * k})` : 'rgba(255, 255, 255, 0.6)';
       const off = k !== null ? `rgba(255, 110, 90, ${0.15 + 0.3 * blink})` : 'rgba(255, 255, 255, 0.15)';
@@ -1553,8 +1570,8 @@ function render(now, dt, talkDt = dt) {
     }
   }
   // The roll getting ready again: a ring inside his health's, two of its rings' steps in (there in a roll too)
-  const rollGone = me.roll ? me.roll.t : ROLL_TIME + ROLL_COOLDOWN - (me.rollCooldown ?? 0); // (seconds since a roll started)
-  const rollCool = Math.max(0, 1 - rollGone / (ROLL_TIME + ROLL_COOLDOWN));
+  const rollGone = me.roll ? me.roll.t : ROLL_TIME + rollWait() - (me.rollCooldown ?? 0); // (seconds since a roll started)
+  const rollCool = Math.max(0, 1 - rollGone / (ROLL_TIME + rollWait()));
   if (rollShown()) reach.roll(snap(camX + toScreenX(me.x)), snap(camY + toScreenY(me.y)), toScreenX(HEALTH_R) - 2 * RING_STEP, aimAngle() + Math.PI, rollCool, dt);
   // His health, a ring on the sand round him (there in a roll too, unlike the reach)
   reach.health(snap(camX + toScreenX(me.x)), snap(camY + toScreenY(me.y)), toScreenX(HEALTH_R), aimAngle() + Math.PI, me.hp, HP, strikeClock); // (the pulse on real time)
@@ -1570,7 +1587,7 @@ function render(now, dt, talkDt = dt) {
     x: snap(camX + toScreenX(p.x)), y: snap(camY + toScreenY(p.y)), dir: p.dir,
     // The roll, the slash, the reload and picking up play once, from their start
     // (squatting while E fills, the pick animation's way down follows the key)
-    time: p.roll ? p.roll.t * 1000 : p.slash ? p.slash.t * 1000 : reloading(p) ? ammo.reload * 1000 : p.fire && p.fire.phase !== 'loop' ? p.fire.t * 1000 : p.pick ? p.pick.t * 1000
+    time: p.roll ? p.roll.t * 1000 : p.slash ? p.slash.t * 1000 : reloading(p) ? ammo.reload * (RELOAD_TIME / reloadTime()) * 1000 : p.fire && p.fire.phase !== 'loop' ? p.fire.t * 1000 : p.pick ? p.pick.t * 1000
       : p.squat > 0 ? p.squat * PICK_GRAB * PICK_TIME * 1000 : now + p.animOffset,
     anim: p.roll ? 'roll' : p.slash ? crouched(p.moving ? SLASH_ANIM[p.gait] : 'slash')
       : reloading(p) ? crouched(p.moving ? RELOAD_ANIM[p.gait] : 'reload')
@@ -1752,8 +1769,8 @@ function render(now, dt, talkDt = dt) {
   if (hasBackpack) hotbar.draw([
     { key: '1', icon: 'cross', held: keys.has('Digit1'), dim: !medkits, cool: medkitCool / MEDKIT_COOLDOWN }, // (how many are left: not shown for now)
     ...(rollShown() ? [{ key: 'Space', icon: 'roll', held: keys.has('Space'), cool: rollCool }] : []),
-    { key: 'LMB', icon: 'fist', held: knifeHeld, cool: Math.min(1, (me.knifeCool ?? 0) / (SLASH_TIME + SLASH_COOLDOWN)) },
-    { key: 'RMB', icon: 'crosshair', held: triggerHeld, cool: ammo?.reload != null ? 1 - ammo.reload / RELOAD_TIME : 0, count: ammo && ammo.reload == null ? ammo.mag : null },
+    { key: 'LMB', icon: 'fist', held: knifeHeld, cool: Math.min(1, (me.knifeCool ?? 0) / (SLASH_TIME + knifeWait())) },
+    { key: 'RMB', icon: 'crosshair', held: triggerHeld, cool: ammo?.reload != null ? 1 - ammo.reload / reloadTime() : 0, count: ammo && ammo.reload == null ? ammo.mag : null },
   ], W / 2, H - GLOBE_MARGIN, dt, { level, k: level >= MAX_LEVEL ? 1 : xp / xpFor(level), points });
   // The bottom right corner, as the planet's name is over the globe, growing up from it: the journal (J) at
   // the bottom, over it the talents (T: once there are some to have, his second level on), then the map

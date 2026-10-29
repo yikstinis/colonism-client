@@ -194,10 +194,16 @@ export function renderBody(sdf, o) {
       let v = level[i] * (n - 1);
       // A different material next to this pixel: draw a seam (cloth edge, waistband)
       if ([[1, 0], [0, 1]].some(([ox, oy]) => level[i + oy * W + ox] >= 0 && mats[i + oy * W + ox] !== mats[i])) v -= 1;
-      // Depth edges (an arm in front of the torso) get a darker contour on the far side
+      // Depth edges (an arm in front of the torso) get a darker contour on the far side (o.innerOutline:
+      // drawn in the outline's color, as the silhouette is: parts kept apart, a hard-edged thing's)
+      let edge = false;
       for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const j = (py + oy) * W + px + ox;
-        if (level[j] >= 0 && depth[i] - depth[j] > 0.12) { v -= 1.6; break; }
+        if (level[j] >= 0 && depth[i] - depth[j] > 0.12) { v -= 1.6; edge = true; break; }
+      }
+      if (edge && o.innerOutline) {
+        out.set([...o.outline, 255], i * 4);
+        continue;
       }
       const th = (BAYER[(py % 4) * 4 + (px % 4)] + 0.5) / 16;
       const idx = Math.max(0, Math.min(n - 1, Math.floor(v + th)));

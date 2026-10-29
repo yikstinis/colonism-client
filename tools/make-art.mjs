@@ -1267,7 +1267,7 @@ const TURRET_SCALE = 0.975; // drawn this much bigger than its model: a heavy gu
 const TURRET_SHADOW_W = 140, TURRET_SHADOW_H = 100, TURRET_SHADOW_ANCHOR = [70, 55];
 const TURRET_RAMPS = [
   ramp('#101113', '#1b1d21', '#272a2f', '#34383e', '#43474e', '#555a61', '#6b7077', '#868b91'), // gunmetal: the gun, the belt
-  ramp('#151a0b', '#222a12', '#30391a', '#3f4b23', '#50602d', '#647638', '#7d8f4a', '#a0ad70'), // armour: pale olive
+  ramp('#0e0f09', '#181a10', '#232518', '#2e3120', '#3a3d28', '#474a31', '#55583b', '#646746'), // armour: dark khaki olive
   ramp('#0e110a', '#161b0f', '#1f2614', '#29321a', '#333f20', '#3e4c27', '#4a592f', '#566737'), // the base: dark olive
   ramp('#050505', '#0a0a0a', '#101010', '#161616', '#1d1d1d', '#252525', '#2d2d2d', '#363636'), // black: the muzzle, the visor, the camera
   ramp('#06121a', '#0b1f2b', '#11303f', '#184254', '#21576b', '#2e6f85', '#4a8ea3', '#7fb8c9'), // the camera's lens: glass
@@ -1315,7 +1315,7 @@ function makeTurret() {
     const { sdf, material } = turretModel((i / TURRET_FRAMES) * Math.PI * 2);
     const img = renderBody(sdf, {
       W: TURRET_W, H: TURRET_H, anchor: TURRET_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
-      camDist: 5.5, focusZ: 0.7, ramps: TURRET_RAMPS, material, outline: [8, 7, 6], bound: [0.7, 1.4],
+      camDist: 5.5, focusZ: 0.7, ramps: TURRET_RAMPS, material, outline: [8, 7, 6], innerOutline: true, bound: [0.7, 1.4], // (its parts kept apart by black lines)
     });
     sh.blit(img, TURRET_W, TURRET_H, i * TURRET_W, 0);
   }
