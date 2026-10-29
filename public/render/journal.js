@@ -6,7 +6,7 @@
 // done ones white, what they're after in gold), and under them what happened on the way, as he noted it
 // (in italics); wrapped to the card.
 
-import { FONT, PLATE, EDGE, GOLD, GOLD_EDGE } from '/render/labels.js';
+import { FONT, PLATE, EDGE, GOLD, GOLD_EDGE, BLUE, BLUE_EDGE } from '/render/labels.js';
 
 const TITLE = `700 14px ${FONT}`, STEP = `300 12px ${FONT}`, NOTE = `italic 300 12px ${FONT}`;
 const SMALL_TITLE = `700 12px ${FONT}`, SMALL_NOTE = `italic 300 11px ${FONT}`; // a done quest's
@@ -58,15 +58,15 @@ export function createJournal(ctx) {
   // A card drawn with its top left at (left, top)
   function card({ q, steps, h, w, small, pad, line }, left, top) {
     // (a done one's plate as dark as ever: only what's on it dimmed, its edges faint, its text grey)
-    const gold = q.main && !q.done, dim = q.done;
+    const gold = q.main && !q.done, blue = q.side && !q.done, dim = q.done; // (blue: a side quest's)
     ctx.beginPath();
     ctx.roundRect(left, top, w, h, [0, 5, 5, 0]);
     ctx.fillStyle = PLATE;
     ctx.fill();
-    ctx.strokeStyle = gold ? GOLD_EDGE : dim ? 'rgba(255, 255, 255, 0.12)' : EDGE;
+    ctx.strokeStyle = gold ? GOLD_EDGE : blue ? BLUE_EDGE : dim ? 'rgba(255, 255, 255, 0.12)' : EDGE;
     ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.fillStyle = gold ? GOLD : dim ? 'rgba(255, 255, 255, 0.4)' : '#fff';
+    ctx.fillStyle = gold ? GOLD : blue ? BLUE : dim ? 'rgba(255, 255, 255, 0.4)' : '#fff';
     ctx.fillRect(left - 0.5, top - 0.5, 3, h + 1);
     ctx.font = small ? SMALL_TITLE : TITLE;
     ctx.fillStyle = dim ? '#b0b0b0' : '#fff';
@@ -82,7 +82,7 @@ export function createJournal(ctx) {
       ctx.font = s.note ? (small ? SMALL_NOTE : NOTE) : STEP;
       for (const ln of s.lines) {
         for (const run of ln) {
-          ctx.fillStyle = dim ? '#888' : run.gold && !s.done && !s.note ? GOLD : s.note || s.about ? '#ccc' : s.done ? '#fff' : '#aaa'; // (what it's after in gold, in what it's about too)
+          ctx.fillStyle = dim ? '#888' : run.gold && !s.done && !s.note ? (q.side ? BLUE : GOLD) : s.note || s.about ? '#ccc' : s.done ? '#fff' : '#aaa'; // (what it's after in gold, in what it's about too)
           ctx.fillText(run.text, left + pad + run.x, y + (small ? 11 : 12));
         }
         y += line;
@@ -91,20 +91,26 @@ export function createJournal(ctx) {
   }
 
   return {
-    // quests: [{ title, about, main, done, steps: [{ text (HTML), done }], notes: [text] }], first to last. The
-    // one on now (the last) always in the same place: its top left at (left, top), width px wide. The
+    // quests: [{ title, about, main, done, on, steps: [{ text (HTML), done }], notes: [text] }], first to last. The
+    // ones on now (on: the story's, then the side ones) always in the same place, one under the other: the
+    // first's top left at (left, top), width px wide. The
     // ones done, smaller, from x0 to x1 (between the header's cards over it), the latest's bottom at
     // bottom (on the cards' line), the rest going up from it out of sight under ceiling (px)
     draw(quests, left, top, width, { x0, x1, bottom, ceiling }) {
       ctx.save();
       ctx.textBaseline = 'alphabetic';
       ctx.textAlign = 'left';
-      card(layout(quests[quests.length - 1], width, false), Math.round(left) + 0.5, Math.round(top) + 0.5);
+      let below = Math.round(top) + 0.5;
+      for (const q of quests.filter((q) => q.on)) {
+        const c = layout(q, width, false);
+        card(c, Math.round(left) + 0.5, below);
+        below += c.h + GAP;
+      }
       ctx.beginPath();
       ctx.rect(0, ceiling, ctx.canvas.width, bottom - ceiling + 1); // (out of sight over ceiling)
       ctx.clip();
       let y = Math.round(bottom) + 0.5 + GAP;
-      for (const q of quests.slice(0, -1).reverse()) {
+      for (const q of quests.filter((q) => !q.on).reverse()) {
         const c = layout(q, Math.round(x1 - x0), true);
         y -= GAP + c.h;
         if (y + c.h < ceiling) break;

@@ -37,8 +37,8 @@ function spinAround() {
   };
 }
 
-// box: the panel element; done(): called as each one's done
-export function createQuests(box, done = () => {}) {
+// box: the panel element; side: the side quests' (under it); done(): called as each one's done
+export function createQuests(box, side, done = () => {}) {
   const quests = [
     {
       title: 'Look around',
@@ -76,14 +76,32 @@ export function createQuests(box, done = () => {}) {
       steps: [{ text: 'Talk to the <span class="goal">fellow</span>', update: ({ fellowTalked }) => fellowTalked }], // (E by him)
     },
     {
-      title: 'Find something out',
+      title: 'Find a way off the planet',
       main: true,
       target: 'fellow',
-      about: 'Try to <span class="goal">find something out</span> from the old man.',
-      steps: [{ text: 'Find something out', update: () => false }], // (nothing to find out yet: it stays on)
+      about: 'Try to <span class="goal">find something out</span> from Oldman. He looks smart, maybe he knows something...',
+      steps: [{ text: 'Find something out', update: ({ fellowAsked }) => fellowAsked }], // (he's asked him the way off: 1, and had his answer)
+    },
+    {
+      title: 'Bring the equipment to the fellow',
+      main: true,
+      target: 'equipment', // (a place: its mark in sector D2, see client.js)
+      about: 'The fellow lost his <span class="goal">equipment</span>. He’s useless without it.',
+      steps: [{ text: 'Bring the equipment to the fellow', update: () => false }], // (nothing to pick up there yet: it stays on)
     },
   ];
-  let current = 0, html = '', last = {}; // last: the latest input
+  // Side quests: off the chain, white, each on from when it's started (see start) alongside the one on,
+  // in a panel of their own under its (side), and in the journal
+  const sides = {
+    hugeThing: {
+      title: 'Huge thing',
+      target: 'hugeThing', // (a place: its mark in sector C1, see client.js; a white arrow to it)
+      about: 'The fellow saw some <span class="goal">huge thing</span> near the pole. Might be worth a look.',
+      steps: [{ text: 'Check out the huge thing', update: () => false }], // (nothing to do there yet: it stays on)
+    },
+  };
+  let current = 0, html = '', sideHtml = '', last = {}; // last: the latest input
+  const sidesOn = () => Object.values(sides).filter((q) => q.on && !q.steps.every((s) => s.done));
 
   function render() {
     const q = quests[current];
@@ -98,7 +116,16 @@ export function createQuests(box, done = () => {}) {
     box.classList.toggle('done', finished);
     box.classList.toggle('main', !!q.main);
   }
+  function renderSides() {
+    const next = sidesOn().map((q) => `<div class="title">${q.title}</div>` + (q.about ? `<div class="about">${q.about}</div>` : '')).join('<div class="split"></div>');
+    if (next === sideHtml) return;
+    sideHtml = next;
+    side.innerHTML = sideHtml;
+    side.classList.toggle('none', !sideHtml);
+    side.classList.add('side');
+  }
   render();
+  renderSides();
 
   // The panel as it is goes: a copy of it fades, then slides up off the screen; once it's gone the
   // panel, the next quest in it now, slides in from the right past the screen's edge (never both at once)
@@ -120,15 +147,26 @@ export function createQuests(box, done = () => {}) {
   }
 
   return {
-    // The quests so far, first to last, for the journal: [{ title, about, main, done, steps: [{ text, done }], notes }]
-    list: () => quests.slice(0, current + 1).map((q) => ({
-      title: q.title, about: q.about ?? '', main: !!q.main, done: q.steps.every((s) => s.done), steps: q.steps.map((s) => ({ text: s.text, done: !!s.done })),
+    // The quests so far, first to last, for the journal: [{ title, about, main, done, on, steps: [{ text, done }], notes }]
+    // (on: the one on now, and after it the side ones on)
+    list: () => [...quests.slice(0, current + 1), ...sidesOn()].map((q, i) => ({
+      title: q.title, about: q.about ?? '', main: !!q.main, side: i > current, done: q.steps.every((s) => s.done), on: i >= current, steps: q.steps.map((s) => ({ text: s.text, done: !!s.done })),
       notes: q.notes ?? [],
     })),
     // Where he's got to, to keep (see client.js: the checkpoint): the quest on, each so far's steps done
     // and notes; load() puts it back
-    save: () => ({ current, quests: quests.slice(0, current + 1).map((q) => ({ done: q.steps.map((s) => !!s.done), notes: q.notes ?? [] })) }),
+    save: () => ({
+      current, quests: quests.slice(0, current + 1).map((q) => ({ done: q.steps.map((s) => !!s.done), notes: q.notes ?? [] })),
+      sides: Object.fromEntries(Object.entries(sides).filter(([, q]) => q.on).map(([id, q]) => [id, { done: q.steps.map((s) => !!s.done), notes: q.notes ?? [] }])),
+    }),
     load(saved) {
+      for (const [id, sq] of Object.entries(saved.sides ?? {})) {
+        if (!sides[id]) continue;
+        sides[id].on = true;
+        sides[id].steps.forEach((s, k) => { s.done = !!sq.done[k]; });
+        sides[id].notes = [...sq.notes];
+      }
+      renderSides();
       current = Math.min(saved.current, quests.length - 1);
       saved.quests.forEach((sq, i) => {
         if (!quests[i]) return;
@@ -137,6 +175,12 @@ export function createQuests(box, done = () => {}) {
       });
       render();
     },
+    // A side quest (by its id in sides) on from now; started(id): it is (done or not)
+    start(id) {
+      sides[id].on = true;
+      renderSides();
+    },
+    started: (id) => !!sides[id].on,
     // Something that happened, noted down in the journal under the quest on now (as he'd write it)
     note(text) {
       (quests[current].notes ??= []).push(text);
@@ -147,6 +191,8 @@ export function createQuests(box, done = () => {}) {
       const step = quests[current].steps.find((s) => !s.done);
       return step ? step.target ?? quests[current].target ?? null : null;
     },
+    // The names of what the side quests on lead to (their own targets)
+    sideTargets: () => sidesOn().map((q) => q.target).filter(Boolean),
     // The name the current quest's target goes by on the map, if not its own (its mark), or null
     mark: () => quests[current].mark ?? null,
     // The current quest is the story's (gold)
@@ -157,9 +203,11 @@ export function createQuests(box, done = () => {}) {
       return q.steps.every((s) => s.done) ? null : q.cue ?? null;
     },
     // input: { dt, running (s), dx, dy (the run's direction), aim (angle to the cursor, or null),
-    // hasBackpack, bottlesBroken (bottles shot off the crate), bagHits (knife cuts in the punching bag), talentsTaken (how many he has), firesideUsed (he's used the safe space's campfire: E), fellowTalked (he's spoken to the fellow: E) }
+    // hasBackpack, bottlesBroken (bottles shot off the crate), bagHits (knife cuts in the punching bag), talentsTaken (how many he has), firesideUsed (he's used the safe space's campfire: E), fellowTalked (he's spoken to the fellow: E), fellowAsked (he's asked him the way off: 1, and had his answer) }
     update(input) {
       last = input;
+      for (const q of sidesOn()) for (const s of q.steps) if (!s.done && s.update(input)) s.done = true;
+      renderSides();
       const q = quests[current];
       if (!q.steps.every((s) => s.done)) {
         for (const s of q.steps) if (!s.done && s.update(input)) s.done = true;

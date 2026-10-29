@@ -46,6 +46,12 @@
     .quest.faded { opacity: 0.4; }
     .quest.gone { opacity: 0; transition: transform 0.5s ease-in, opacity 0.5s ease-in; }
     .quest.coming { transform: translateX(calc(100% + 40px)); transition: none; }
+    /* The side quests', under it (its top set in client.js), white; none on: not there */
+    .quest.none { display: none; }
+    .quest .split { margin: 5px 0; border-top: 1px solid rgba(255, 255, 255, 0.15); }
+    /* edged in blue, what they're after in blue too (see BLUE in render/labels.js) */
+    .quest.side { border-color: rgba(108, 184, 230, 0.6); border-left-color: #6cb8e6; }
+    .quest.side .goal { color: #6cb8e6; }
   </style>
 </head>
 <body>
@@ -54,6 +60,7 @@
   <!-- The controls hint is hidden for now (drop `hidden` to show it) -->
   <div id="hud" hidden>Connecting…</div>
   <div id="quest" class="quest"></div>
+  <div id="side" class="quest none"></div>
   <!-- The debug window is hidden for now (drop `hidden` to show it) -->
   <pre id="debug" hidden></pre>
   <script type="module" src="/client.js"></script>

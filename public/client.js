@@ -1,13 +1,13 @@
 import {
-  SPAWN, OBJECTS, REACH, ROLL_TIME, ROLL_COOLDOWN, UNITS_PER_M, VISION, GAIT_SPEED, CHART0, PLANET, SYSTEM, PLANET_R, POLE, STRIKE_SLANT, STRIKE_WAY, BAG_HITS, STRUCTURES, SAFE_ZONES, modelToWorld, TURRET_FRAMES, TURRET_RANGE, TURRET_MUZZLE, recenter, move, dirFromVector, dirVector, gait, rayHit, addObstacle, removeObstacle, startRoll, updateRoll, CROUCH_SPEED, CROUCH_AIM, CROUCH_CYCLE, AIM_OUT_TIME, AIM_OFFSETS, FIRE_ROUNDS, RELOAD_TIME, GAIT_CYCLE, SHOT_RANGE, SHOT_SPREAD, shotSway, PICK_TIME, PICK_GRAB, SLASH_TIME, SLASH_COOLDOWN, SLASH_RANGE, SLASH_ARC, BUG_BITE_TIME, BUG_BITE_SNAP,
+  SPAWN, OBJECTS, REACH, ROLL_TIME, ROLL_COOLDOWN, UNITS_PER_M, VISION, GAIT_SPEED, CHART0, PLANET, SYSTEM, PLANET_R, POLE, STRIKE_SLANT, STRIKE_WAY, BAG_HITS, STRUCTURES, HUGE_THING, SAFE_ZONES, modelToWorld, TURRET_FRAMES, TURRET_RANGE, TURRET_MUZZLE, recenter, move, dirFromVector, dirVector, gait, rayHit, addObstacle, removeObstacle, startRoll, updateRoll, CROUCH_SPEED, CROUCH_AIM, CROUCH_CYCLE, AIM_OUT_TIME, AIM_OFFSETS, FIRE_ROUNDS, RELOAD_TIME, GAIT_CYCLE, SHOT_RANGE, SHOT_SPREAD, shotSway, PICK_TIME, PICK_GRAB, SLASH_TIME, SLASH_COOLDOWN, SLASH_RANGE, SLASH_ARC, BUG_BITE_TIME, BUG_BITE_SNAP,
 } from '/shared/world.js';
 import { ZOOM, HEIGHT_PX, toScreenX, toScreenY } from '/render/view.js';
 import { loadSprites } from '/render/sprites.js';
 import { createGround } from '/render/ground.js';
 import { createQuests } from '/quests.js';
 import { createSounds } from '/sounds.js';
-import { FONT, GOLD, HOLD_TIME, createLabels } from '/render/labels.js';
-import { createSpeech } from '/render/speech.js';
+import { FONT, GAP as LABEL_GAP, GOLD, BLUE, HOLD_TIME, createLabels } from '/render/labels.js';
+import { createSpeech, TYPE_RATE } from '/render/speech.js';
 import { createGuide } from '/render/guide.js';
 import { createReach } from '/render/reach.js';
 import { createHotbar } from '/render/hotbar.js';
@@ -15,7 +15,8 @@ import { TALENTS, TALENT_POINTS, createTalents } from '/render/talents.js';
 import { lifeBar, RING_STEP } from '/render/life.js';
 import { createJournal } from '/render/journal.js';
 import { MARGIN as GLOBE_MARGIN, RADIUS as GLOBE_RADIUS, createGlobe } from '/render/globe.js';
-import { moveChart, toChart } from '/shared/sphere.js';
+import { cellPoint } from '/shared/grid.js';
+import { add, cross, dot, moveChart, norm, scale, toChart } from '/shared/sphere.js';
 import { createShots } from '/render/shots.js';
 import { createStrike } from '/render/strike.js';
 import { createLevelUp } from '/render/levelup.js';
@@ -24,6 +25,7 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const hud = document.getElementById('hud');
 const questBox = document.getElementById('quest');
+const sideBox = document.getElementById('side');
 let journalOpen = false; // the journal (J)
 const debugBox = document.getElementById('debug');
 const drawGround = createGround(document.getElementById('ground')); // the desert, under this canvas
@@ -58,6 +60,7 @@ const RECENTER = 10 * UNITS_PER_M; // this far from the chart's origin, the char
 // sprite: character sheet in sprites.json (the hero changes into 'hero_pack' with the backpack on)
 const HP = 10; // the hero's health, full
 const HEALTH_R = 0.49 * UNITS_PER_M; // its ring's radius round him
+const HERO_EDGE = 30; // px left of him: the white edge what's over him starts at (by his left shoulder)
 const MEDKITS = 3, MEDKIT_HEAL = 5; // medkits in the backpack (once he has it: 1 uses one), and how much health each gives back
 const MEDKIT_COOLDOWN = 10; // seconds after one before the next can be used
 let medkits = MEDKITS, medkitCool = 0; // (seconds till the next can be)
@@ -72,9 +75,10 @@ const objects = OBJECTS.filter((o) => !o.later); // what still lies on the map (
 
 // ---------- Quests: look around, find the backpack (see quests.js) ----------
 
-const quests = createQuests(questBox, () => sounds.questDone()); // (a chord as each one's done)
+const quests = createQuests(questBox, sideBox, () => sounds.questDone()); // (a chord as each one's done)
 const journal = createJournal(ctx); // every quest so far (J)
 const guide = createGuide(ctx); // the arrow to the current quest's target
+const sideGuide = createGuide(ctx); // and the side quests', in blue
 const sounds = createSounds();
 sounds.wake(); // (tried at once: where the browser lets a page play sound before the player does anything, the desert is heard from the start; elsewhere it waits for the first key or click)
 const reach = createReach(ctx); // the knife's reach on the ground
@@ -99,7 +103,7 @@ const reachable = () => objects.find((o) => (o.pickup || o.say) && Math.hypot(me
 // (what the quest is after is named in gold, as in its text; its name up out of the way of its life's dots, when it has them)
 const labelOf = (o, x, y) => {
   const box = sprites.objectInk(o.sprite ?? o.name, x, y);
-  return { id: o.name, text: o.label, sub: o.note, box: lifeOf(o) ? { ...box, y0: box.y0 - LIFE_ROOM } : box, quest: o.name === quests.target() };
+  return { id: o.id ?? o.name, text: o.label, sub: o.note, box: lifeOf(o) ? { ...box, y0: box.y0 - LIFE_ROOM } : box, quest: o.name === quests.target() };
 };
 // A thing's life, shown over it (see render/life.js) while it's to be hit, as [left, most]: the bottles'
 // while the drill's on (one each), the bag's while its quest is (a cut each); or null
@@ -197,6 +201,9 @@ let rollPressed = -Infinity; // time of the last Space press: a press shortly be
 let usePressed = false; // E was pressed since the last frame
 let mapOpen = false; // M: the globe big in the middle over a dark world
 let mapShown = 0; // 0..1, how far it has opened
+let mapLook = null; // the way the globe's looked at on the map, dragged round ({ o, u, r }), or null: from over the hero (till it's shut again)
+let mapPlace = null; // where the globe was last drawn open: { x, y, r } (px), or null
+let mapDrag = null; // the cursor where the globe was last dragged to, while it's held on it, or null
 let attackPressed = false; // the left mouse button was pressed since the last frame
 let triggerHeld = false; // the right one: firing while it's held
 let knifeHeld = false; // the left one held (its key on the HUD shows it pressed)
@@ -217,7 +224,15 @@ window.addEventListener('keydown', (e) => {
     if (talentsOpen) sounds.press(); // (the key's click: in, and out the other way round)
     else sounds.done();
   }
-  if (e.code === 'Digit1' && !e.repeat && hasBackpack && medkits > 0 && medkitCool <= 0 && me.hp > 0 && me.hp < HP) { // a medkit: health back
+  const ask = Number(e.code.slice(5)) - 1; // (Digit1: the first)
+  if (e.code.startsWith('Digit') && FELLOW_ASKS[ask] && !e.repeat && fellowAsk) { // what to ask the fellow, over the hero: he says it (by its number; not a medkit then)
+    fellowAsk = false;
+    fellowSpeech.hush(); // (whatever he was saying cut off: he listens)
+    speech.hush();
+    speech.say(FELLOW_ASKS[ask].text);
+    fellowAnswer = { text: FELLOW_ASKS[ask].answer, in: FELLOW_ASKS[ask].text.length / TYPE_RATE + 0.5, then: FELLOW_ASKS[ask].then };
+    sounds.press();
+  } else if (e.code === 'Digit1' && !e.repeat && hasBackpack && medkits > 0 && medkitCool <= 0 && me.hp > 0 && me.hp < HP) { // a medkit: health back
     medkits--;
     medkitCool = MEDKIT_COOLDOWN;
     me.hp = Math.min(HP, me.hp + MEDKIT_HEAL);
@@ -251,8 +266,21 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'KeyE') waitRelease = false;
 });
 let mouse = null; // the cursor on screen, once it has moved over the page
-window.addEventListener('mousemove', (e) => { mouse = { x: e.clientX, y: e.clientY }; });
-document.addEventListener('mouseleave', () => { mouse = null; });
+window.addEventListener('mousemove', (e) => {
+  mouse = { x: e.clientX, y: e.clientY };
+  if (!mapDrag || !mapPlace) return;
+  // The globe dragged round: its face goes with the cursor (the look turned the other way, by as much
+  // as the cursor's gone along its rim)
+  const a = (e.clientX - mapDrag.x) / mapPlace.r, b = (e.clientY - mapDrag.y) / mapPlace.r;
+  let { o, u, r } = mapLook;
+  [o, r] = [add(scale(o, Math.cos(a)), scale(r, -Math.sin(a))), add(scale(r, Math.cos(a)), scale(o, Math.sin(a)))]; // (across)
+  [o, u] = [add(scale(o, Math.cos(b)), scale(u, Math.sin(b))), add(scale(u, Math.cos(b)), scale(o, -Math.sin(b)))]; // (up and down)
+  o = norm(o);
+  u = norm(add(u, scale(o, -dot(u, o))));
+  mapLook = { o, u, r: cross(u, o) };
+  mapDrag = mouse;
+});
+document.addEventListener('mouseleave', () => { mouse = mapDrag = null; });
 window.addEventListener('mousedown', (e) => {
   sounds.wake(); // (the sound can start only once he's done something)
   if (talentsOpen) { // the talents' window: a click takes one
@@ -267,17 +295,25 @@ window.addEventListener('mousedown', (e) => {
     }
     return;
   }
+  if (mapOpen) { // the map: the globe taken hold of, to turn it (no slash)
+    if (e.button === 0 && mapPlace && Math.hypot(e.clientX - mapPlace.x, e.clientY - mapPlace.y) < mapPlace.r) mapDrag = { x: e.clientX, y: e.clientY };
+    return;
+  }
   if (e.button === 0) attackPressed = knifeHeld = true;
   if (e.button === 2) triggerHeld = true;
 });
 window.addEventListener('mouseup', (e) => {
-  if (e.button === 0) knifeHeld = false;
+  if (e.button === 0) {
+    knifeHeld = false;
+    mapDrag = null;
+  }
   if (e.button === 2) triggerHeld = false;
 });
 window.addEventListener('contextmenu', (e) => e.preventDefault()); // the right button fires
 window.addEventListener('blur', () => {
   keys.clear();
   triggerHeld = knifeHeld = false;
+  mapDrag = null;
 });
 
 function inputDirection() {
@@ -796,8 +832,9 @@ const TURRET_WAVE = 5, TURRET_NEAR = 4 * UNITS_PER_M; // bugs that come for him 
 let turretMet = false;
 
 function updateTurret(dt) {
-  // The first time he comes up to it, a pack comes for him out of the dark (for it to show what it does)
-  if (!turretMet && Math.hypot(turret.x - me.x, turret.y - me.y) < TURRET_NEAR) {
+  // The first time he comes up to it on his way to the safe space (its campfire not used yet), a pack comes
+  // for him out of the dark (for it to show what it does); once he's been to the fire, none
+  if (!turretMet && !firesideUsed && Math.hypot(turret.x - me.x, turret.y - me.y) < TURRET_NEAR) {
     turretMet = true;
     for (let i = 0; i < TURRET_WAVE; i++) {
       const was = bugs.length;
@@ -1328,22 +1365,29 @@ function step(real) {
     if (near.heals) me.hp = HP; // (warming himself by it: health back, all of it; no sound for now: sounds.heal())
     if (near.name === 'fellow') { // he speaks; before the hero's warmed himself by the fire, the old man sends him to it (not a talk yet)
       fellowSpeech.say(firesideUsed ? near.say : 'Oh, a visitor! I do love visitors! Looks like you need to warm up. Don’t be shy!');
+      if (firesideUsed && quests.target() === 'fellow' && !fellowAnswer) fellowAsk = true; // (from the first talk, while the quest's on him: what to ask him, over the hero)
       if (firesideUsed && !fellowTalked) { // (the talk, once: noted in the journal, under the quest to have it)
         fellowTalked = true;
         quests.note('Nothing interesting so far...');
       }
     }
-    if (near.name === 'campfire') firesideUsed = saving = true; // (the safe space reached; and he'll start from here next time: kept once the quests have taken it in, below)
+    if (near.name === 'campfire' && !near.id) firesideUsed = saving = true; // (the safe space reached; and he'll start from here next time: kept once the quests have taken it in, below)
     if (near.name === 'pod' && strike.phase === 'armed') strike.cue = true; // when he's done talking and walks off, it comes
   }
   usePressed = false;
+  if (near?.name !== 'fellow') fellowAsk = false; // (walked off: no more to ask)
   if (holding && held >= HOLD_TIME) {
     sounds.done(); // (the key's click the other way round: it's full)
     pickUp(near);
     held = 0;
     waitRelease = true;
   }
-  quests.update({ dt, running: me.moving && !me.roll, dx, dy, aim: aim && Math.atan2(aim.dy, aim.dx), hasBackpack, bottlesBroken, bagHits, talentsTaken: TALENTS.filter((tl) => talents.has(tl.id)).length, firesideUsed, fellowTalked });
+  if (fellowAnswer && (fellowAnswer.in -= realDt) <= 0) { // (on real time, as the lines are)
+    fellowSpeech.say(fellowAnswer.text);
+    fellowAnswer.then();
+    fellowAnswer = null;
+  }
+  quests.update({ dt, running: me.moving && !me.roll, dx, dy, aim: aim && Math.atan2(aim.dy, aim.dx), hasBackpack, bottlesBroken, bagHits, talentsTaken: TALENTS.filter((tl) => talents.has(tl.id)).length, firesideUsed, fellowTalked, fellowAsked });
   if (!fellowSeen && Math.hypot(fellowObj.x - me.x, fellowObj.y - me.y) < VISION) fellowSeen = true; // (on the map from now on)
   for (const o of objects) if (o.breathes) o.frame = Math.floor((clock / 1000) * 1.3) % (sprites.object(o.name)?.frames ?? 1); // (breathing, slowly)
   if (saving) {
@@ -1414,12 +1458,33 @@ const CHECKPOINT = 'colonism.checkpoint';
 const SECTORS = [
   { at: () => pod.home, explored: () => hasBackpack || checkpointReached, activity: () => hasBackpack },
   { at: () => STRUCTURES.home, explored: () => hasBackpack || checkpointReached, activity: () => firesideUsed },
+  { at: () => EQUIPMENT.home, explored: () => fellowAsked, activity: () => false }, // (D2 and C1: shown him by the fellow's answer)
+  { at: () => HUGE_THING.home, explored: () => fellowAsked, activity: () => false },
 ];
 const sectorCells = () => SECTORS.flatMap((s) => [
   ...(s.explored() ? [{ at: s.at(), color: 'rgba(175, 225, 175, 0.17)' }] : []),
   ...(s.activity() ? [{ at: s.at(), hatch: 'rgba(175, 225, 175, 0.35)' }] : []),
 ]);
 let checkpointReached = false, firesideUsed = false, fellowTalked = false, fellowSeen = false, saving = false;
+let fellowAsk = false; // what to ask the fellow is up over the hero (by number), till he picks one or walks off
+// What he can ask the fellow: the fellow answers once he's said it (typed out, and a moment), and then
+// what comes of it
+const FELLOW_ASKS = [{
+  text: 'How do I get off this planet?',
+  answer: 'I lost my equipment in the West. Here’s a beacon, help me get it back. By the way, have you seen that huge thing near the pole?',
+  then() { // the quest to find a way off done (its note first), the next on; the beacon's sector and the pole's explored, their marks on the map
+    quests.note('Still nothing interesting...');
+    fellowAsked = true;
+    quests.start('hugeThing');
+  },
+}];
+let fellowAnswer = null; // { text, in (seconds till he says it), then }: the fellow's answer coming
+let fellowAsked = false; // (he's had the answer to the way off)
+// Places on the map the quests lead to, by the name they go by (not things: a point of the ball and a
+// name, as an object's home and label): the fellow's equipment, low on the right of sector D2, where his
+// beacon shows it; the huge thing he spoke of, by the pole (see shared/world.js)
+const EQUIPMENT = { label: 'Equipment', home: cellPoint('D2', 0.8, 0.8) };
+const PLACES = { structures: STRUCTURES, equipment: EQUIPMENT, hugeThing: HUGE_THING };
 const fellowObj = OBJECTS.find((o) => o.name === 'fellow'); // (firesideUsed: its campfire used, the quest to get there done; saving: to keep where he's got to, this frame)
 function saveCheckpoint() {
   checkpointReached = true;
@@ -1438,6 +1503,7 @@ function loadCheckpoint() {
   ({ level, xp, points, medkits } = saved);
   talents.restore(saved.talents);
   quests.load(saved.quests);
+  fellowAsked = fellowTalked = quests.started('hugeThing'); // (the fellow's answer had: all it opened)
   // All that came before it, done: the backpack on, the gun counted out, the bottles and the bag gone,
   // every cue past
   hasBackpack = true;
@@ -1619,7 +1685,7 @@ function render(now, dt, talkDt = dt) {
   canvas.style.cursor = pointing ? 'none' : '';
   // An object in front of us that covers our body is drawn see-through
   const hidesMe = (o) => {
-    if ((o.footprint ? tallY(o) : o.y) <= me.y || ['bottles', 'bag', 'bag_stand'].includes(o.name)) return false; // (a big thing: by its footprint) // (the crate's low, the bottles and the bag slim: they stay solid)
+    if ((o.footprint ? tallY(o) : o.y) <= me.y || ['bottles', 'bag', 'bag_stand', 'campfire'].includes(o.name)) return false; // (a big thing: by its footprint) // (the crate's low, the bottles and the bag slim, the campfire low: they stay solid)
     const b = sprites.objectBounds(o.sprite ?? o.name, o.sx, o.sy);
     const inset = (b.x1 - b.x0) * 0.15; // the frame is a bit larger than the crown
     return me0.x > b.x0 + inset && me0.x < b.x1 - inset && me0.y - 40 > b.y0 && me0.y - 40 < o.sy;
@@ -1655,7 +1721,7 @@ function render(now, dt, talkDt = dt) {
     const life = lifeOf(o);
     if (life) {
       const box = sprites.objectInk(o.sprite ?? o.name, o.sx, o.sy);
-      lifeBar(ctx, (box.x0 + box.x1) / 2, box.y0 - 5, ...life);
+      lifeBar(ctx, (box.x0 + box.x1) / 2, box.y0 - LABEL_GAP - 1, ...life); // (at the bottom of what's over it)
     }
   }
 
@@ -1665,10 +1731,10 @@ function render(now, dt, talkDt = dt) {
   // the things themselves
   const near = me.pick ? null : reachable();
   const shown = placed.filter((o) => o.label && !(o === bottles && (drillShown() || !bottles.frame))).map((o) => labelOf(o, o.sx, o.sy)); // (the drill draws the bottles')
-  const edges = labels.draw(shown, near?.name ?? null, near?.pickup ? held / HOLD_TIME : keys.has('KeyE') ? 1 : 0, dt); // (nothing to hold for: the key full while pressed)
+  const edges = labels.draw(shown, near ? near.id ?? near.name : null, near?.pickup ? held / HOLD_TIME : keys.has('KeyE') ? 1 : 0, dt); // (nothing to hold for: the key full while pressed)
   const bagCard = quests.target() === 'bag' && shown.find((item) => item.id === 'bag');
   if (bagCard) { // the knife's quest: what to do over the bag's name, on its edge (seen only with the bag, like it)
-    const over = bagCard.box.y0 - 4 - 22 - 7;
+    const over = bagCard.box.y0 - LABEL_GAP - 22 - 7;
     labels.warn('Use your knife to say goodbye to an old friend...', 'LMB', edges.bag, over - 22 >= 8 ? over : bagCard.box.y1 + 6 + 22, knifeHeld ? 1 : 0, `${bagHits}/${BAG_HITS}`);
   }
   crumb('render: the dark');
@@ -1684,7 +1750,7 @@ function render(now, dt, talkDt = dt) {
   if (drillShown()) { // the bottles' name where it always is, and what to do over it (both over the dark, lined up on their white edges)
     const item = labelOf(bottles, snap(camX + toScreenX(bottles.x)), snap(camY + toScreenY(bottles.y)));
     const edge = labels.one(item);
-    const over = item.box.y0 - 4 - 22 - 7; // its bottom; with no room on screen over it, it goes under the bottles
+    const over = item.box.y0 - LABEL_GAP - 22 - 7; // its bottom; with no room on screen over it, it goes under the bottles
     const at = over - 22 >= 8 ? over : item.box.y1 + 6 + 22;
     labels.warn('Shoot them! Not like I’m planning any parties...', 'RMB', edge, at, triggerHeld ? 1 : 0, `${bottlesBroken}/${BOTTLES_ALL}`); // (in gold: it's what to do; its key pressed while it's held)
   }
@@ -1695,34 +1761,52 @@ function render(now, dt, talkDt = dt) {
   // fade into it; and on the screen, however small)
   // Our own spot on the ball, the screen's up and right there: the arrow and the globe go by it
   const here = moveChart(chart, me.x - SPAWN.x, me.y - SPAWN.y, PLANET_R);
-  const goal = objects.find((o) => o.name === quests.target()) ?? (quests.target() === 'structures' ? STRUCTURES : null); // (a thing, or a place)
+  const goal = objects.find((o) => o.name === quests.target()) ?? PLACES[quests.target()] ?? null; // (a thing, or a place)
   if (goal) {
     const ring = Math.min(toScreenX(VISION) * 0.75, Math.min(W, H) / 2 - 40);
     const to = toChart(here, goal.home, PLANET_R); // straight from us, the shortest way round the ball
-    guide.draw(me0.x, me0.y, ring, to.x, to.y, Math.hypot(to.x, to.y) / UNITS_PER_M, dt, quests.main()); // (gold for the story's)
+    guide.draw(me0.x, me0.y, ring, to.x, to.y, Math.hypot(to.x, to.y) / UNITS_PER_M, dt, quests.main() ? GOLD : '#fff'); // (gold for the story's)
   }
+  quests.sideTargets().forEach((name, i) => { // (the side quests', blue, on the same ring)
+    const side = objects.find((o) => o.name === name) ?? PLACES[name];
+    if (!side) return;
+    const ring = Math.min(toScreenX(VISION) * 0.75, Math.min(W, H) / 2 - 40);
+    const to = toChart(here, side.home, PLANET_R);
+    sideGuide.draw(me0.x, me0.y, ring, to.x, to.y, Math.hypot(to.x, to.y) / UNITS_PER_M, i ? 0 : dt, BLUE); // (its pulse on once a frame)
+  });
   // What the hero says, over his head (in the light, he's in it): always as high, clear of the gun
   // he holds up once armed
   // Shooting the bottles (from when he has the gun): what crouching does, in gold, right over him, in one
   // place (Shift held down while he is); his line over it then, lined up on its edge
-  let sayAt = me0.y - 98, sayEdge = null;
+  // (his own stack's bottom: LABEL_GAP over the top of him, as a thing's name is over it; his line's plate 6 px
+  // over its y)
+  // All of it on one white edge, by his left shoulder (as the fellow's line goes from his name's edge),
+  // reaching out to the right
+  const heroBase = me0.y - sprites.characterTop(me.sprite) - LABEL_GAP, heroEdge = Math.round(me0.x - HERO_EDGE);
+  let sayAt = heroBase + 6, sayEdge = heroEdge;
   if (drillShown()) {
-    const hint = 'Crouch to shoot farther...', key = 'Shift', bottom = me0.y - 104; // (where his line's bottom would be)
-    const edge = Math.round(me0.x - labels.warnWidth(hint, key) / 2) + labels.keyWidth(key);
+    const hint = 'Crouch to shoot farther...', key = 'Shift', bottom = heroBase; // (where his line's bottom would be)
+    const edge = heroEdge;
     labels.warn(hint, key, edge, bottom, me.crouch ? 1 : 0);
     sayAt = bottom - 22; // (its plate 6 px over it)
     sayEdge = edge;
   }
   const said = speech.draw(me0.x, sayAt, talkDt, sayEdge);
-  const fellow = placed.find((o) => o.name === 'fellow');
-  if (fellow) fellowSpeech.draw(fellow.sx, fellow.sy - 98, talkDt); // (the fellow's line, over his head)
+  // The fellow's line: stacked over his name, as anything over a thing is (its bottom 6 px over the
+  // name's top, lined up on its white edge); with no name shown, where it'd be
+  const fellowName = shown.find((item) => item.id === 'fellow');
+  if (fellowName) fellowSpeech.draw(0, fellowName.box.y0 - LABEL_GAP - 22, talkDt, edges.fellow - 0.5); // (the edge as a card gives it: on the half pixel)
   const pressed = strike.phase === 'falling' && strike.t < STRIKE_PRESSED; // (Space just hit: its key shows it)
   if ((strike.phase === 'frozen' || pressed) && said) labels.warn(STRIKE_PROMPT, 'Space', said.edge, said.top - 6, pressed ? 1 : 0); // over his line, on its edge
   if (talentCue === 'frozen' && said) labels.warn(TALENT_PROMPT, 'T', said.edge, said.top - 6, keys.has('KeyT') ? 1 : 0);
   if (talentAsk && points && talentCue === 'done') { // a later level's: over him (or over his line), in white
     const hold = keys.has('KeyT') ? 1 : 0;
     if (said) labels.warn(TALENT_PROMPT, 'T', said.edge, said.top - 6, hold, '', false);
-    else labels.warn(TALENT_PROMPT, 'T', Math.round(me0.x - labels.warnWidth(TALENT_PROMPT, 'T') / 2) + labels.keyWidth('T'), me0.y - 104, hold, '', false);
+    else labels.warn(TALENT_PROMPT, 'T', heroEdge, heroBase, hold, '', false);
+  }
+  if (fellowAsk) { // what to ask the fellow: over him (or over his line), the first on top, on one edge, in gold (the story's)
+    const bottom = said ? said.top - 6 : heroBase, edge = said ? said.edge : heroEdge;
+    FELLOW_ASKS.forEach((ask, i) => labels.warn(ask.text, String(i + 1), edge, bottom - (FELLOW_ASKS.length - 1 - i) * 28, keys.has(`Digit${i + 1}`) ? 1 : 0));
   }
   const journalPressed = journalCue.phase === 'pressed'; // (J just hit)
   if ((journalCue.phase === 'frozen' || journalPressed) && said) labels.warn(JOURNAL_PROMPT, 'J', said.edge, said.top - 6, journalPressed ? 1 : 0);
@@ -1732,6 +1816,8 @@ function render(now, dt, talkDt = dt) {
   // the world goes as dark as beyond what we see, and the globe moves over us, well inside our sight
   mapShown = Math.max(0, Math.min(1, mapShown + (mapOpen ? talkDt : -talkDt) / 0.25)); // (on real time: the game holds while it's open)
   const k = mapShown * mapShown * (3 - 2 * mapShown);
+  if (!mapOpen) mapDrag = null;
+  if (k <= 0) mapLook = null; // (shut: back over the hero, for the corner and the next time)
   if (k > 0) {
     ctx.fillStyle = `rgba(4, 3, 8, ${(k * 235) / 255})`; // the dark beyond sight's
     ctx.fillRect(0, 0, W, H);
@@ -1740,6 +1826,10 @@ function render(now, dt, talkDt = dt) {
   const corner = { x: GLOBE_MARGIN + GLOBE_RADIUS, y: H - GLOBE_MARGIN - GLOBE_RADIUS, r: GLOBE_RADIUS };
   const big = { x: me0.x, y: me0.y, r: Math.min(toScreenX(VISION), Math.min(W, H) / 2 - 50) * 0.6 };
   const place = { x: lerp(corner.x, big.x), y: lerp(corner.y, big.y), r: lerp(corner.r, big.r), dot: lerp(3, 4), arrow: lerp(1, 1.8) };
+  mapPlace = mapOpen && k >= 1 ? place : null;
+  mapLook ??= mapPlace && here; // (open: from over him, till it's dragged)
+  // Over the globe open, an open hand: it can be taken and turned; a closed one while it's held
+  if (mapPlace && mouse && (mapDrag || Math.hypot(mouse.x - place.x, mouse.y - place.y) < place.r)) canvas.style.cursor = mapDrag ? 'grabbing' : 'grab';
   crumb('render: the globe');
   const marks = !mapKnown ? [] : globe.draw(here, dirVector(me.dir), [
     { at: pod.home, color: '#fff', name: pod.label },
@@ -1748,7 +1838,8 @@ function render(now, dt, talkDt = dt) {
     ...(fellowSeen && goal?.name !== 'fellow' ? [{ at: fellowObj.home, color: '#fff', name: fellowObj.label }] : []), // (the fellow, once he's been seen)
     ...(goal ? [{ at: goal.home, color: GOLD, name: quests.mark() ?? goal.label, quest: true }] : []), // where the quest leads, in gold (as the quest is)
     ...(goal !== STRUCTURES && goal?.name !== 'campfire' && mapCue.phase !== 'armed' ? [{ at: STRUCTURES.home, color: '#fff', name: STRUCTURES.label }] : []), // (and the safe place, once he's said where it is: white, when it's not where the quest leads)
-  ], place, sectorCells(), mapOpen && k >= 1 ? mouse : null); // (the grid's cells from where he came down to where he made it, all of them between: done, once he's at the safe space's checkpoint: the cell under the cursor picked out, the map open)
+    ...(quests.started('hugeThing') ? [{ at: HUGE_THING.home, color: BLUE, name: HUGE_THING.label, side: true }] : []), // (the huge thing, once the fellow's told him of it: blue, as its quest)
+  ], place, sectorCells(), mapOpen && k >= 1 ? mouse : null, mapLook ?? here); // (the grid's cells from where he came down to where he made it, all of them between: done, once he's at the safe space's checkpoint: the cell under the cursor picked out, the map open)
   if (k > 0) { // open, the marks get their names
     ctx.save();
     ctx.globalAlpha = k;
@@ -1758,7 +1849,7 @@ function render(now, dt, talkDt = dt) {
     const widths = marks.map((m) => labels.tagWidth(m.mark.name, 'M') - labels.keyWidth('M'));
     marks.forEach((m, i) => {
       const left = marks.some((o, j) => j !== i && o.x > m.x && Math.abs(o.y - m.y) < 24 && m.x + 14 < o.x + 14 + widths[j] + 4 && m.x + 14 + widths[i] > o.x + 14 - 4);
-      labels.pin(m.mark.name, left ? m.x - 14 - widths[i] : m.x + 14, m.y, left, m.mark.quest); // (to the left: mirrored, its edge towards its mark; the quest's: in gold)
+      labels.pin(m.mark.name, left ? m.x - 14 - widths[i] : m.x + 14, m.y, left, m.mark.quest, m.mark.side); // (to the left: mirrored, its edge towards its mark; the quest's: in gold; a side quest's: in blue)
     });
     ctx.restore();
   }
@@ -1783,6 +1874,9 @@ function render(now, dt, talkDt = dt) {
   const jk = journalOpen ? 1 : 0; // (at once, as the talents')
   questBox.hidden = !journalKnown(); // (none till he has opened the journal)
   questBox.style.opacity = String(1 - jk);
+  sideBox.hidden = questBox.hidden; // (the side quests', under it, as it)
+  sideBox.style.opacity = questBox.style.opacity;
+  sideBox.style.top = `${Math.round(questBox.getBoundingClientRect().bottom + 8)}px`;
   if (jk < 1 && journalKnown()) {
     const box = questBox.getBoundingClientRect();
     ctx.save();

@@ -127,6 +127,26 @@ export async function loadSprites(manifestUrl) {
     // A character's animation as the manifest has it ({ start, frames, fps, ... }), or undefined
     animation: (name, anim) => characters[name].animations[anim],
 
+    // How high a character stands on screen (px over its feet): the top of what's drawn of it standing
+    // still facing the camera (its idle frames, the first row): so what's stacked over it goes as over a
+    // thing (see objectInk), steady whatever it does
+    characterTop(name) {
+      const s = characters[name];
+      if (s.top === undefined) {
+        const a = s.animations.idle, c = document.createElement('canvas');
+        c.width = s.fw * a.frames;
+        c.height = s.fh;
+        const g = c.getContext('2d');
+        g.drawImage(s.image, a.start * s.fw, 0, s.fw * a.frames, s.fh, 0, 0, s.fw * a.frames, s.fh);
+        const px = g.getImageData(0, 0, c.width, c.height).data;
+        let y0 = s.fh;
+        for (let y = 0; y < s.fh && y0 === s.fh; y++)
+          for (let x = 0; x < c.width; x++) if (px[(y * c.width + x) * 4 + 3]) { y0 = y; break; }
+        s.top = (s.anchor[1] - y0) * (s.scale ?? scale);
+      }
+      return s.top;
+    },
+
     objectInk(name, x, y) {
       const s = objects[name], k = s.scale ?? scale, i = s.ink;
       return { x0: x + (i.x0 - s.anchor[0]) * k, y0: y + (i.y0 - s.anchor[1]) * k, x1: x + (i.x1 - s.anchor[0]) * k, y1: y + (i.y1 - s.anchor[1]) * k };

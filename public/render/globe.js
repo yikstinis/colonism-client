@@ -3,26 +3,11 @@
 // turning shows, marks on it (the capsule). Drawn like the reach overlay: a faint white wash,
 // dashed lines.
 
-import { add, cross, dot, rotate, scale } from '/shared/sphere.js';
+import { add, dot, rotate, scale } from '/shared/sphere.js';
+import { POLE, EAST, THIRD, STEP, lonOf, latOf, nameOf } from '/shared/grid.js';
 
 export const RADIUS = 85; // px, in the corner
 export const MARGIN = 18;
-// The grid's axis, and two more square to it (any fixed ones will do)
-const POLE = [0, 1, 0], GRID_TURN = (6 * Math.PI) / 180; // (the grid turned round the pole a little: the escape pod nearer the middle of its cell)
-const EAST = rotate([1, 0, 0], POLE, GRID_TURN), THIRD = cross(EAST, POLE);
-const STEP = Math.PI / 6; // the grid's cells: this far apart both ways (12 round, 6 from pole to pole)
-const lonOf = (q) => Math.atan2(dot(q, THIRD), dot(q, EAST)), latOf = (q) => Math.asin(Math.max(-1, Math.min(1, dot(q, POLE))));
-// A cell's name, as on a chessboard: a letter for its column (A to L, west to east), a number for its row
-// (1 to 6, north to south); by its indexes (row: floor(lat / STEP), column: floor(lon / STEP))
-const nameOf = (row, col) => 'ABCDEFGHIJKL'[(((5 - col) % 12) + 12) % 12] + (3 - row);
-// The name of the cell a point of the ball is in
-export const cellName = (q) => nameOf(Math.floor(latOf(q) / STEP), Math.floor(lonOf(q) / STEP));
-// The middle of a cell next to the one a point of the ball is in: rows (dRow) up towards the north pole,
-// columns (dCol) round (as longitude grows)
-export function cellNext(q, dRow, dCol) {
-  const lat = (Math.floor(latOf(q) / STEP) + dRow + 0.5) * STEP, lon = (Math.floor(lonOf(q) / STEP) + dCol + 0.5) * STEP;
-  return add(scale(POLE, Math.sin(lat)), scale(add(scale(EAST, Math.cos(lon)), scale(THIRD, Math.sin(lon))), Math.cos(lat)));
-}
 
 // ctx: the canvas to draw on
 export function createGlobe(ctx) {
@@ -37,12 +22,14 @@ export function createGlobe(ctx) {
     // (between two parallels and two meridians; a triangle at a pole), or all the cells from the one at's
     // in to the one to's (the block of them between), filled in (a part of it done, say). Gives the marks on the near
     // side, where they are: [{ mark, x, y }]. pointer: the cursor ({ x, y }, or null), its cell picked
-    // out (lit faintly, its name along its bottom edge; kept for hovered())
-    draw(view, dir, marks, place = null, cells = [], pointer = null) {
+    // out (lit faintly, its name along its bottom edge; kept for hovered()). look: { o, u, r }, the way the
+    // ball is looked at (turned on the map by dragging it; the hero's own view, by default): his arrow
+    // then where his point is on it, and only on its near side
+    draw(view, dir, marks, place = null, cells = [], pointer = null, look = view) {
       const H = ctx.canvas.height;
       const { x: cx, y: cy, r: R, dot: size = 3, arrow = 1 } = place ?? { x: MARGIN + RADIUS, y: H - MARGIN - RADIUS, r: RADIUS };
       // A point of the ball on the globe: where (px), and how much it faces us (>0: the near side)
-      const onGlobe = (q) => ({ x: cx + dot(q, view.r) * R, y: cy - dot(q, view.u) * R, z: dot(q, view.o) });
+      const onGlobe = (q) => ({ x: cx + dot(q, look.r) * R, y: cy - dot(q, look.u) * R, z: dot(q, look.o) });
       ctx.save();
       // The ball: no rim, just a faint white wash like the melee reach's, shaded round: a highlight up
       // and to the left fading across it, and a touch lighter again at the limb
@@ -137,7 +124,7 @@ export function createGlobe(ctx) {
       hover = null;
       const px = pointer && (pointer.x - cx) / R, py = pointer && -(pointer.y - cy) / R;
       if (pointer && px * px + py * py < 1) {
-        const q = add(add(scale(view.r, px), scale(view.u, py)), scale(view.o, Math.sqrt(1 - px * px - py * py)));
+        const q = add(add(scale(look.r, px), scale(look.u, py)), scale(look.o, Math.sqrt(1 - px * px - py * py)));
         const row = Math.floor(latOf(q) / STEP), col = Math.floor(lonOf(q) / STEP);
         fillBlock(row * STEP, (row + 1) * STEP, col * STEP, (col + 1) * STEP, 'rgba(255, 255, 255, 0.12)');
         // Its name, small, along its bottom edge on screen (as if written on the ball): from that edge's
@@ -176,9 +163,14 @@ export function createGlobe(ctx) {
         ctx.fill();
         shown.push({ mark, x: g.x, y: g.y });
       }
-      // The hero: an arrow at the center, the way he faces, white on a dark rim
-      const a = Math.atan2(dir.dy, dir.dx);
-      ctx.translate(cx, cy);
+      // The hero: an arrow at his point (the center, unturned), the way he faces, white on a dark rim
+      const me = onGlobe(view.o), way = add(scale(view.r, dir.dx), scale(view.u, -dir.dy)); // (the way he faces, on the ball)
+      if (me.z <= 0) {
+        ctx.restore();
+        return shown;
+      }
+      const a = Math.atan2(-dot(way, look.u), dot(way, look.r));
+      ctx.translate(me.x, me.y);
       ctx.rotate(a);
       ctx.scale(arrow, arrow);
       ctx.beginPath();

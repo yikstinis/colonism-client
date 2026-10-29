@@ -2,7 +2,7 @@
 // what he sees), pointing at it and pulsing outwards a little, how many meters away it is just inside
 // it; it fades out as the target comes close enough to be seen.
 
-import { FONT, GOLD } from '/render/labels.js';
+import { FONT } from '/render/labels.js';
 
 const DISTANCE = `700 11px ${FONT}`;
 const NEAR = 7, FAR = 10; // meters: gone at NEAR, fully there from FAR on
@@ -12,10 +12,9 @@ export function createGuide(ctx) {
   let clock = 0;
   return {
     // (x, y): the hero's feet on screen; ring: px from them; (dx, dy): towards the target in world
-    // units (ground directions aren't foreshortened on screen); meters: how far it is; gold: the story's
-    // quest's (the arrow in gold, as its card is; the distance stays white)
-    draw(x, y, ring, dx, dy, meters, dt, gold = false) {
-      const color = gold ? GOLD : '#fff';
+    // units (ground directions aren't foreshortened on screen); meters: how far it is; color: the arrow's,
+    // as its quest's card is (gold for the story's; the distance stays white)
+    draw(x, y, ring, dx, dy, meters, dt, color = '#fff') {
       clock += dt;
       const alpha = Math.min(1, Math.max(0, (meters - NEAR) / (FAR - NEAR)));
       if (alpha <= 0) return;

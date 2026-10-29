@@ -11,7 +11,9 @@ const SAY = `300 12px ${FONT}`;
 const COUNT = `400 9px ${FONT}`, COUNT_H = 14; // a key's count, on a smaller plate out to its left (px) // a gold card's text: what to do, in the type of his lines (render/speech.js; its key bold, as every key)
 export const PLATE = 'rgba(0, 0, 0, 0.7)', EDGE = 'rgba(255, 255, 255, 0.35)';
 export const GOLD = '#e6be5a', GOLD_EDGE = 'rgba(230, 190, 90, 0.6)'; // what matters most (a warning; the main quest's card, in index.html)
+export const BLUE = '#6cb8e6', BLUE_EDGE = 'rgba(108, 184, 230, 0.6)'; // a side quest's (its card, in index.html; its arrow, its mark on the map)
 const KEY_SIZE = 18; // px: the key's plate, whatever the card's height (at its top)
+export const GAP = 14; // px from the top of a thing (or a character) up to the bottom of what's stacked over it: the same for all
 export const HOLD_TIME = 0.45; // seconds E is held to pick something up (0: a press does it)
 
 const ease = (t) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3; // fast, then settling
@@ -43,7 +45,7 @@ export function createLabels(ctx) {
     const w = Math.round(Math.max(line, item.sub ? width(item.sub, NOTE) : 0) + 20);
     const h = item.sub ? 34 : 22;
     const left = item.pin ? Math.round(item.pin.x) + 0.5 : item.at ? Math.round(item.at.x + keyWidth(key)) + 0.5 : Math.round((item.box.x0 + item.box.x1) / 2 - w / 2) + 0.5;
-    const top = item.pin ? Math.round(item.pin.y - h / 2) + 0.5 : item.at ? Math.round(item.at.y - h) + 0.5 : Math.round(item.box.y0 - 4 - h) + 0.5;
+    const top = item.pin ? Math.round(item.pin.y - h / 2) + 0.5 : item.at ? Math.round(item.at.y - h) + 0.5 : Math.round(item.box.y0 - GAP - h) + 0.5;
 
     if (open > 0) prompt(left, top, h, open, hold, key, gold, !!item.gold, item.count); // first: it's under the card
 
@@ -53,10 +55,10 @@ export function createLabels(ctx) {
     ctx.roundRect(left, top, w, h, item.flip ? [5, 0, 0, 5] : [0, 5, 5, 0]);
     ctx.fillStyle = PLATE;
     ctx.fill();
-    ctx.strokeStyle = gold ? GOLD_EDGE : EDGE;
+    ctx.strokeStyle = gold ? GOLD_EDGE : item.side ? BLUE_EDGE : EDGE; // (side: a side quest's, in blue)
     ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.fillStyle = gold ? GOLD : '#fff';
+    ctx.fillStyle = gold ? GOLD : item.side ? BLUE : '#fff';
     ctx.fillRect(item.flip ? left + w - 2.5 : left - 0.5, top - 0.5, 3, h + 1);
     const x = left + (item.flip ? 9 : 11), mid = top + 11;
     text(item.text, font, x, mid, '#fff');
@@ -157,10 +159,6 @@ export function createLabels(ctx) {
       ctx.textBaseline = 'alphabetic';
       prompt(Math.round(x) + 0.5, Math.round(y - KEY_SIZE / 2 - 2) + 0.5, 22, 1, hold, key, gold, gold);
     },
-    // How wide warn() makes one, its key and all
-    warnWidth(text, key) {
-      return keyWidth(key) + Math.round(width(text, SAY) + 20);
-    },
     // How wide tag() makes one, its key and all (to line it up by its right end)
     tagWidth(text, key, tail = '') {
       return keyWidth(key) + Math.round(width(text, NAME) + (tail ? width(tail, NAME) : 0) + 20);
@@ -173,11 +171,11 @@ export function createLabels(ctx) {
     },
     // A name by a point (a mark on the map): the card's left edge at x, its middle at y
     // (flip: the card mirrored, its thick edge on the right: a name to the left of its point; quest: edged
-    // in gold, as what the quest's after is)
-    pin(text, x, y, flip = false, quest = false) {
+    // in gold, as what the quest's after is; side: in blue, as what a side quest's after is)
+    pin(text, x, y, flip = false, quest = false, side = false) {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
-      card({ text, pin: { x, y }, flip, quest }, 0, 0);
+      card({ text, pin: { x, y }, flip, quest, side }, 0, 0);
     },
     // A thing with this id was picked up: its card goes with it
     pickedUp(id) {

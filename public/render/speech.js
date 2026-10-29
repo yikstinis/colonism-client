@@ -4,7 +4,7 @@
 import { FONT, PLATE, EDGE } from '/render/labels.js';
 
 const TEXT = `300 12px ${FONT}`;
-const TYPE_RATE = 40; // letters per second
+export const TYPE_RATE = 40; // letters per second
 const MAX_W = 230; // px, the text wraps to this
 const LINE_H = 16;
 

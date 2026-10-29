@@ -2,6 +2,7 @@
 // it if multiplayer comes back.
 
 import { moveChart, northChart, toChart, toSphere } from './sphere.js';
+import { cellPoint } from './grid.js';
 
 export const SPEED = 100; // world units per second (~4.5 m/s, a brisk run)
 // Backpedaling and sidestepping are slower than running forwards (the art generator times their
@@ -265,6 +266,15 @@ const FELLOW_SOLID = { ...modelToWorld(GARAGE, [0.55, GARAGE_SIZE[1] + 0.9]), r:
 OBJECTS.push({ name: 'fellow', x: FELLOW_SOLID.x, y: FELLOW_SOLID.y, label: 'Fellow', solid: FELLOW_SOLID, say: 'Oh, a visitor! I hate visitors! Haven’t had any in ages... Are you going to kill me?', speaks: true, breathes: true }); // (speaks: his line's his own, over his head)
 OBSTACLES.push(FELLOW_SOLID);
 
+// The huge thing the fellow saw near the pole (see quests.js): in the middle of the map's cell C1 ({ home,
+// label }, as the safe space: the quest's arrow and the map's mark go by it), a campfire as the safe
+// space's burning right there, a safe zone round it
+export const HUGE_THING = { label: 'Huge thing', home: cellPoint('C1') };
+Object.assign(HUGE_THING, chartPoint(CHART0, HUGE_THING.home));
+const POLE_FIRE_SOLID = { x: HUGE_THING.x, y: HUGE_THING.y, r: 0.55 * UNITS_PER_M, of: 'pole_fire' };
+OBJECTS.push({ name: 'campfire', id: 'pole_fire', x: HUGE_THING.x, y: HUGE_THING.y, label: 'Campfire', solid: POLE_FIRE_SOLID, heals: true, say: 'Someone keeps a fire going out here too...' }); // (the safe space's art, its flames; not its checkpoint: see client.js)
+OBSTACLES.push(POLE_FIRE_SOLID);
+
 // Safe zones round the escape pod and the backpack (overlapping: the way between them is safe too),
 // and round the structures: bugs only come for the hero when he's out of them
 // all; they don't turn up in them (see client.js). { at (what it's round: anything kept on the chart with an x, y), r (world units) }
@@ -272,13 +282,14 @@ export const SAFE_ZONES = [
   { at: OBJECTS.find((o) => o.name === 'pod'), r: 12 * UNITS_PER_M },
   { at: OBJECTS.find((o) => o.name === 'backpack'), r: 11 * UNITS_PER_M },
   { at: STRUCTURES, r: 10 * UNITS_PER_M },
+  { at: OBJECTS.find((o) => o.id === 'pole_fire'), r: 10 * UNITS_PER_M },
 ];
 
 // Their places on the planet: each object at a point of the ball (home); each solid circle at an
 // offset from its object (of), so it stays with its sprite
 for (const o of OBJECTS) o.home = toSphere(CHART0, o.x - SPAWN.x, o.y - SPAWN.y, PLANET_R);
 for (const ob of OBSTACLES) {
-  const parent = OBJECTS.find((o) => o.name === ob.of);
+  const parent = OBJECTS.find((o) => (o.id ?? o.name) === ob.of);
   ob.dx = ob.x - parent.x;
   ob.dy = ob.y - parent.y;
 }
@@ -291,9 +302,9 @@ function chartPoint(chart, home) {
 
 // Puts the objects (and the structures' place) and the solid circles on the chart (where they are on it now)
 export function placeOnChart(chart) {
-  for (const o of [...OBJECTS, STRUCTURES]) Object.assign(o, chartPoint(chart, o.home));
+  for (const o of [...OBJECTS, STRUCTURES, HUGE_THING]) Object.assign(o, chartPoint(chart, o.home));
   for (const ob of OBSTACLES) {
-    const parent = OBJECTS.find((o) => o.name === ob.of);
+    const parent = OBJECTS.find((o) => (o.id ?? o.name) === ob.of);
     if (!parent) continue; // added later, on no object (a crater's): the client carries it
     ob.x = parent.x + ob.dx;
     ob.y = parent.y + ob.dy;
