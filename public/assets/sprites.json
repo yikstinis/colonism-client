@@ -218,13 +218,38 @@
           "frames": 4,
           "fps": 40
         },
-        "aimOut": {
+        "reload": {
           "start": 178,
+          "frames": 12,
+          "fps": 8
+        },
+        "reloadRun": {
+          "start": 190,
+          "frames": 24,
+          "fps": 16
+        },
+        "reloadBack": {
+          "start": 214,
+          "frames": 24,
+          "fps": 16
+        },
+        "reloadL": {
+          "start": 238,
+          "frames": 24,
+          "fps": 16
+        },
+        "reloadR": {
+          "start": 262,
+          "frames": 24,
+          "fps": 16
+        },
+        "aimOut": {
+          "start": 286,
           "frames": 4,
           "fps": 33.333333333333336
         },
         "fire-": {
-          "start": 182,
+          "start": 290,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -234,7 +259,7 @@
           ]
         },
         "fire": {
-          "start": 192,
+          "start": 300,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -244,7 +269,7 @@
           ]
         },
         "fire+": {
-          "start": 202,
+          "start": 310,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -254,7 +279,7 @@
           ]
         },
         "fireRun-": {
-          "start": 212,
+          "start": 320,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -264,7 +289,7 @@
           ]
         },
         "fireRun": {
-          "start": 222,
+          "start": 330,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -274,7 +299,7 @@
           ]
         },
         "fireRun+": {
-          "start": 232,
+          "start": 340,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -284,7 +309,7 @@
           ]
         },
         "fireBack-": {
-          "start": 242,
+          "start": 350,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -294,7 +319,7 @@
           ]
         },
         "fireBack": {
-          "start": 252,
+          "start": 360,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -304,7 +329,7 @@
           ]
         },
         "fireBack+": {
-          "start": 262,
+          "start": 370,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -314,7 +339,7 @@
           ]
         },
         "fireStrafeL-": {
-          "start": 272,
+          "start": 380,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -324,7 +349,7 @@
           ]
         },
         "fireStrafeL": {
-          "start": 282,
+          "start": 390,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -334,7 +359,7 @@
           ]
         },
         "fireStrafeL+": {
-          "start": 292,
+          "start": 400,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -344,7 +369,7 @@
           ]
         },
         "fireStrafeR-": {
-          "start": 302,
+          "start": 410,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -354,7 +379,7 @@
           ]
         },
         "fireStrafeR": {
-          "start": 312,
+          "start": 420,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -364,7 +389,7 @@
           ]
         },
         "fireStrafeR+": {
-          "start": 322,
+          "start": 430,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -374,42 +399,67 @@
           ]
         },
         "cslash": {
-          "start": 332,
+          "start": 440,
           "frames": 10,
           "fps": 28.571428571428573
         },
         "cslashRun": {
-          "start": 342,
+          "start": 450,
           "frames": 10,
           "fps": 28.571428571428573
         },
         "cslashBack": {
-          "start": 352,
+          "start": 460,
           "frames": 10,
           "fps": 28.571428571428573
         },
         "cslashL": {
-          "start": 362,
+          "start": 470,
           "frames": 10,
           "fps": 28.571428571428573
         },
         "cslashR": {
-          "start": 372,
+          "start": 480,
           "frames": 10,
           "fps": 28.571428571428573
         },
         "caimIn": {
-          "start": 382,
+          "start": 490,
           "frames": 4,
           "fps": 40
         },
+        "creload": {
+          "start": 494,
+          "frames": 12,
+          "fps": 8
+        },
+        "creloadRun": {
+          "start": 506,
+          "frames": 24,
+          "fps": 16
+        },
+        "creloadBack": {
+          "start": 530,
+          "frames": 24,
+          "fps": 16
+        },
+        "creloadL": {
+          "start": 554,
+          "frames": 24,
+          "fps": 16
+        },
+        "creloadR": {
+          "start": 578,
+          "frames": 24,
+          "fps": 16
+        },
         "caimOut": {
-          "start": 386,
+          "start": 602,
           "frames": 4,
           "fps": 33.333333333333336
         },
         "cfire-": {
-          "start": 390,
+          "start": 606,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -419,7 +469,7 @@
           ]
         },
         "cfire": {
-          "start": 400,
+          "start": 616,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -429,7 +479,7 @@
           ]
         },
         "cfire+": {
-          "start": 410,
+          "start": 626,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -439,7 +489,7 @@
           ]
         },
         "cfireRun-": {
-          "start": 420,
+          "start": 636,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -449,7 +499,7 @@
           ]
         },
         "cfireRun": {
-          "start": 430,
+          "start": 646,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -459,7 +509,7 @@
           ]
         },
         "cfireRun+": {
-          "start": 440,
+          "start": 656,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -469,7 +519,7 @@
           ]
         },
         "cfireBack-": {
-          "start": 450,
+          "start": 666,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -479,7 +529,7 @@
           ]
         },
         "cfireBack": {
-          "start": 460,
+          "start": 676,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -489,7 +539,7 @@
           ]
         },
         "cfireBack+": {
-          "start": 470,
+          "start": 686,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -499,7 +549,7 @@
           ]
         },
         "cfireStrafeL-": {
-          "start": 480,
+          "start": 696,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -509,7 +559,7 @@
           ]
         },
         "cfireStrafeL": {
-          "start": 490,
+          "start": 706,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -519,7 +569,7 @@
           ]
         },
         "cfireStrafeL+": {
-          "start": 500,
+          "start": 716,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -529,7 +579,7 @@
           ]
         },
         "cfireStrafeR-": {
-          "start": 510,
+          "start": 726,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -539,7 +589,7 @@
           ]
         },
         "cfireStrafeR": {
-          "start": 520,
+          "start": 736,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -549,7 +599,7 @@
           ]
         },
         "cfireStrafeR+": {
-          "start": 530,
+          "start": 746,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -588,6 +638,11 @@
         },
         "walk": {
           "start": 4,
+          "frames": 8,
+          "fps": 20
+        },
+        "bite": {
+          "start": 12,
           "frames": 8,
           "fps": 20
         }
@@ -858,25 +913,124 @@
         58
       ]
     },
-    "tent": {
-      "image": "tent.png",
+    "campfire": {
+      "image": "campfire.png",
       "frame": [
-        600,
-        460
+        80,
+        72
       ],
       "anchor": [
-        300,
-        250
+        40,
+        42
       ],
-      "shadow": {
-        "image": "tent_shadow.png",
+      "decal": {
+        "image": "campfire_decal.png",
         "frame": [
-          600,
-          460
+          96,
+          80
         ],
         "anchor": [
-          300,
-          250
+          48,
+          40
+        ]
+      },
+      "fires": [
+        [
+          0,
+          0,
+          0.15
+        ],
+        [
+          0.08,
+          0.06,
+          0.12
+        ],
+        [
+          -0.07,
+          -0.06,
+          0.12
+        ]
+      ],
+      "smoke": [
+        [
+          0,
+          0,
+          0.55
+        ]
+      ]
+    },
+    "turret": {
+      "image": "turret.png",
+      "frame": [
+        110,
+        120
+      ],
+      "anchor": [
+        55,
+        84
+      ],
+      "frames": 16,
+      "shadow": {
+        "image": "turret_shadow.png",
+        "frame": [
+          140,
+          100
+        ],
+        "anchor": [
+          70,
+          55
+        ]
+      }
+    },
+    "garage": {
+      "image": "garage.png",
+      "frame": [
+        280,
+        330
+      ],
+      "anchor": [
+        140,
+        165
+      ],
+      "smoke": [
+        [
+          0.95,
+          -1.9,
+          4.35
+        ]
+      ],
+      "shadow": {
+        "image": "garage_shadow.png",
+        "frame": [
+          260,
+          300
+        ],
+        "anchor": [
+          130,
+          150
+        ]
+      }
+    },
+    "fellow": {
+      "image": "fellow.png",
+      "frame": [
+        96,
+        120
+      ],
+      "anchor": [
+        48,
+        94
+      ],
+      "frames": 4,
+      "shadow": {
+        "image": "fellow_shadow.png",
+        "frame": [
+          120,
+          90
+        ],
+        "anchor": [
+          60,
+          50
         ]
       }
     }

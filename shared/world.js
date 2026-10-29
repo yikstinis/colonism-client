@@ -14,8 +14,8 @@ export const PLAYER_SIZE = 10; // collision box (feet), centered on player x/y
 // Dodge roll: a forward roll over the shoulder, faster than the run; the art generator times the
 // animation to ROLL_TIME
 export const ROLL_TIME = 0.5; // seconds
-export const ROLL_SPEED = 200; // world units per second at the start, easing off towards the end
-export const ROLL_COOLDOWN = 0.2; // seconds after a roll before the next one
+export const ROLL_SPEED = 160; // world units per second at the start, easing off towards the end (a roll ~3 m)
+export const ROLL_COOLDOWN = 2; // seconds after a roll before the next one (the hotbar shows it going)
 // Picking something up: the hero squats, is lowest at PICK_GRAB of the way and stands up again (the
 // art generator shapes the animation by these)
 export const PICK_TIME = 0.6; // seconds
@@ -23,7 +23,6 @@ export const PICK_GRAB = 0.5;
 // A knife slash (armed, with the left mouse button), standing or on the move
 export const SLASH_TIME = 0.35; // seconds
 export const SLASH_COOLDOWN = 1; // seconds after a slash before the next can start
-
 
 // Facing: 8 directions, 0 = +y in world (down the screen, towards the camera), counting towards +x
 export const DIR_COUNT = 8;
@@ -55,7 +54,7 @@ export function gait(dir, dx, dy) {
 export const SPAWN = { x: 528, y: 528 };
 export const UNITS_PER_M = 22; // world units per meter
 export const PLANET = 'Sandy'; // its name
-export const SYSTEM = 'Abaddon'; // the star system it's in
+export const SYSTEM = 'Albion'; // the star system it's in
 export const PLANET_R = 100 * UNITS_PER_M; // ~630 m round
 export const POLE = [0, 1, 0];
 // Where we come down: high in the north (65°, ~44 m from the pole), a little off to one side (25°
@@ -71,17 +70,20 @@ export const AIM_OUT_TIME = 0.12;
 export const GAIT_CYCLE = { stand: 0.5, run: 0.5, back: 0.5, left: 0.45, right: 0.45 };
 export const FIRE_ROUNDS = 5;
 export const RELOAD_TIME = 1.5; // seconds to put a full magazine in (the art generator times the hero's reload by it)
+// A bug's bite, played once over BUG_BITE_TIME seconds: it rears up, jaws wide, and snaps them shut
+// on him BUG_BITE_SNAP of the way through (when the bite lands), then settles back
+export const BUG_BITE_TIME = 0.4, BUG_BITE_SNAP = 0.5;
 // The firing loops are drawn aimed straight ahead of the facing and this far off it either way
 // (radians, the way screen angles grow: + turns it to the figure's right): the one nearest the aim is
 // played
 export const AIM_OFFSETS = [-0.26, 0, 0.26];
-export const SHOT_RANGE = 3.5 * UNITS_PER_M; // how far a round carries (short, to begin with)
+export const SHOT_RANGE = 3 * UNITS_PER_M; // how far a round carries (short, to begin with)
 // Crouched, the hero fires steadier: the range this much longer, the spread (and the sway) this much
 // narrower
 export const CROUCH_AIM = { range: 1.1, spread: 0.5 };
 // The aim sways: across this either way of where the hero aims (radians), back and forth over
 // SWAY_PERIOD seconds; a shot goes where the sway is when it fires
-export const SHOT_SPREAD = 0.16;
+export const SHOT_SPREAD = 0.08;
 export const SWAY_PERIOD = 1.2;
 // The sway at time t (seconds): an even back and forth across the spread (radians, from the aim)
 export function shotSway(t) {
@@ -89,8 +91,8 @@ export function shotSway(t) {
   return SHOT_SPREAD * (k < 0.5 ? 4 * k - 1 : 3 - 4 * k);
 }
 // A knife slash's reach (see SLASH_TIME)
-export const SLASH_RANGE = 1.4 * UNITS_PER_M; // how far it reaches, from the feet
-export const SLASH_ARC = (120 * Math.PI) / 180; // how wide, centered on where the hero aims
+export const SLASH_RANGE = 1 * UNITS_PER_M; // how far it reaches, from the feet (the least: talents to come will take it farther)
+export const SLASH_ARC = (90 * Math.PI) / 180; // how wide, centered on where the hero aims (the least, as the reach)
 export const VISION = 8 * UNITS_PER_M; // how far a character sees in the dark; beyond it the world is in shadow
 
 // The landing capsule next to the spawn point. yaw turns the pod's model in the ground plane; the
@@ -187,7 +189,9 @@ const BACKPACK_SOLID = { x: BACKPACK.x, y: BACKPACK.y, r: 0.35 * UNITS_PER_M, of
 // where its sprite has fires or smoke in model space), label (its name shown
 // over it), note (a line under the name), solid (its circle in OBSTACLES, taken out when it's
 // picked up), flat (lies flat on the ground: drawn under the characters), later (not there at first: put down later); and what E does with it: pickup (hold E to pick it up; the hero says pickupSay then) or
-// say (a press makes the hero say this) }
+// say (a press makes the hero say this); heals (a press gives him all his health back); footprint
+// ([half width, half depth] meters, in its model: a big thing, drawn in front of or behind the hero by
+// where it reaches to, not by its middle); breathes (its sprite's frames played round, slowly) }
 export const OBJECTS = [
   {
     name: 'pod', x: POD.x, y: POD.y, yaw: POD.yaw, label: 'Escape pod', solid: POD_SOLID,
@@ -223,23 +227,43 @@ export const OBSTACLES = [
   })),
 ];
 
-// Where the hero saw some structures as he fell (see quests.js): STRUCTURES_WEST meters from the
-// backpack, straight on due west from it (on the great circle that sets out west there), only a point
-// on the ball for now ({ home, label }, as an object's: the quest's arrow and the map's mark go by it)
-const STRUCTURES_WEST = 60;
+// The safe space (see quests.js), where the hero saw something as he fell: STRUCTURES_WEST meters west
+// of the backpack and STRUCTURES_SOUTH south (on its chart, north up), a point on the ball ({ home,
+// label }, as an object's: the quest's arrow and the map's mark go by it), its campfire and all round it
+const STRUCTURES_WEST = 25, STRUCTURES_SOUTH = 30; // meters west and south of it (in the map's grid: low in the cell next to the escape pod's, well off its safe zone: a way to fight through)
 const backpackHome = toSphere(CHART0, BACKPACK.x - SPAWN.x, BACKPACK.y - SPAWN.y, PLANET_R);
-export const STRUCTURES = { label: 'Safe place', home: toSphere(northChart(backpackHome, POLE, [0, 1, 0]), -STRUCTURES_WEST * UNITS_PER_M, 0, PLANET_R) };
+export const STRUCTURES = { label: 'Safe space', home: toSphere(northChart(backpackHome, POLE, [0, 1, 0]), -STRUCTURES_WEST * UNITS_PER_M, STRUCTURES_SOUTH * UNITS_PER_M, PLANET_R) };
 Object.assign(STRUCTURES, chartPoint(CHART0, STRUCTURES.home)); // (its x, y on the chart, kept there as the objects')
-
-// The safe place: a huge army tent pitched there, along x, its door in the middle of its +y side,
-// facing the camera (the art generator draws it so): its open door shows, room to stand before it.
-// TENT_SIZE: its half length (x) and half width (y), meters; it stops the hero along a row of circles
-// down its middle (clear of the ground before its door), and shots
-// (for now: pitched by the capsule, to see the two side by side; its place is STRUCTURES)
-export const TENT = { x: POD.x + 11 * UNITS_PER_M, y: POD.y - 1 * UNITS_PER_M, yaw: -0.08 };
-export const TENT_SIZE = [4.5, 3.0];
-OBJECTS.push({ name: 'tent', x: TENT.x, y: TENT.y, yaw: TENT.yaw, label: 'Army tent', say: 'Somebody was here before me... Looks abandoned.' });
-OBSTACLES.push(...[-3, -1.5, 0, 1.5, 3].map((m) => ({ ...modelToWorld(TENT, [m, 0]), r: (TENT_SIZE[1] - 0.2) * UNITS_PER_M, cover: true, of: 'tent' })));
+// The safe space's campfire, burning right there: low (struck and shot over), not walked through
+const CAMPFIRE_SOLID = { x: STRUCTURES.x, y: STRUCTURES.y, r: 0.55 * UNITS_PER_M, of: 'campfire' };
+OBJECTS.push({ name: 'campfire', x: STRUCTURES.x, y: STRUCTURES.y, label: STRUCTURES.label, solid: CAMPFIRE_SOLID, heals: true, say: 'A prehistoric way to keep warm... Barbaric, but it works!' });
+OBSTACLES.push(CAMPFIRE_SOLID);
+// By it, an automatic turret: a machine gun on a tripod that turns to the nearest bug in TURRET_RANGE
+// and fires at it (see client.js); tall: it stops shots
+export const TURRET = { x: STRUCTURES.x + 2.6 * UNITS_PER_M, y: STRUCTURES.y - 0.6 * UNITS_PER_M }; // (on the side he comes from: east)
+export const TURRET_FRAMES = 16; // its sprite's: a frame for each way the gun points, round from +x
+export const TURRET_RANGE = 8 * UNITS_PER_M;
+export const TURRET_MUZZLE = [0.5, 0, 0.7]; // meters: how far out from its pivot along the gun, to its left, how high (as the art draws it, scaled up)
+const TURRET_SOLID = { x: TURRET.x, y: TURRET.y, r: 0.34 * UNITS_PER_M, cover: true, of: 'turret' };
+OBJECTS.push({ name: 'turret', x: TURRET.x, y: TURRET.y, solid: TURRET_SOLID, aim: Math.PI / 2 });
+OBSTACLES.push(TURRET_SOLID);
+// Over them all, to one side: a garage, the Soviet kind (a brick box, longer than wide, along y), its
+// gates in its +y end (facing the camera, down to the campfire); it stops the hero, and shots, along a
+// row of circles down it
+export const GARAGE = { x: STRUCTURES.x - 2.2 * UNITS_PER_M, y: STRUCTURES.y - 6.5 * UNITS_PER_M, yaw: 0.26 }; // (turned a little)
+export const GARAGE_SIZE = [1.7, 3.0, 3.6]; // meters: its half width (x), half depth (y), its walls' height (well over the hero)
+OBJECTS.push({ name: 'garage', x: GARAGE.x, y: GARAGE.y, yaw: GARAGE.yaw, footprint: GARAGE_SIZE }); // (footprint: big and tall, see client.js's drawing order)
+OBSTACLES.push(...[-2.2, -1.1, 0, 1.1, 2.2].map((m) => ({ ...modelToWorld(GARAGE, [0, m]), r: 1.75 * UNITS_PER_M, cover: true, of: 'garage' })));
+// Its torn-off gate leaf, leant against its side wall by the doorway (its middle, meters, in its model;
+// the art draws it there): it stops the hero, and shots, along a few circles down its foot, and in the
+// gap between it and the wall
+export const GARAGE_LEAF = [GARAGE_SIZE[0] + 0.62, GARAGE_SIZE[1] - 0.85];
+OBSTACLES.push(...[0.15, -0.3].flatMap((d) => [-0.45, 0, 0.45].map((m) => ({ ...modelToWorld(GARAGE, [GARAGE_LEAF[0] + d, GARAGE_LEAF[1] + m]), r: 0.38 * UNITS_PER_M, cover: true, of: 'garage' })))); // (and the gap under it to the wall: no getting in there)
+// The fellow: an old scientist, standing out in front of the garage by its open doorway (meters, in its
+// model), facing the camera; he stops the hero (not shots: they'd go into him)
+const FELLOW_SOLID = { ...modelToWorld(GARAGE, [0.55, GARAGE_SIZE[1] + 0.9]), r: 0.3 * UNITS_PER_M, of: 'garage' };
+OBJECTS.push({ name: 'fellow', x: FELLOW_SOLID.x, y: FELLOW_SOLID.y, label: 'Fellow', solid: FELLOW_SOLID, say: 'Oh, a visitor! I hate visitors! Haven’t had any in ages... Are you going to kill me?', speaks: true, breathes: true }); // (speaks: his line's his own, over his head)
+OBSTACLES.push(FELLOW_SOLID);
 
 // Safe zones round the escape pod and the backpack (overlapping: the way between them is safe too),
 // and round the structures: bugs only come for the hero when he's out of them

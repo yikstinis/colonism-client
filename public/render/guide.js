@@ -2,7 +2,7 @@
 // what he sees), pointing at it and pulsing outwards a little, how many meters away it is just inside
 // it; it fades out as the target comes close enough to be seen.
 
-import { FONT } from '/render/labels.js';
+import { FONT, GOLD } from '/render/labels.js';
 
 const DISTANCE = `700 11px ${FONT}`;
 const NEAR = 7, FAR = 10; // meters: gone at NEAR, fully there from FAR on
@@ -12,8 +12,10 @@ export function createGuide(ctx) {
   let clock = 0;
   return {
     // (x, y): the hero's feet on screen; ring: px from them; (dx, dy): towards the target in world
-    // units (ground directions aren't foreshortened on screen); meters: how far it is
-    draw(x, y, ring, dx, dy, meters, dt) {
+    // units (ground directions aren't foreshortened on screen); meters: how far it is; gold: the story's
+    // quest's (the arrow in gold, as its card is; the distance stays white)
+    draw(x, y, ring, dx, dy, meters, dt, gold = false) {
+      const color = gold ? GOLD : '#fff';
       clock += dt;
       const alpha = Math.min(1, Math.max(0, (meters - NEAR) / (FAR - NEAR)));
       if (alpha <= 0) return;
@@ -21,7 +23,7 @@ export function createGuide(ctx) {
       ctx.save();
       ctx.translate(x + Math.cos(a) * r, y + Math.sin(a) * r);
       ctx.rotate(a);
-      // An open chevron, white on a dark rim
+      // An open chevron, white (or gold) on a dark rim
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       const chevron = () => {
@@ -36,7 +38,7 @@ export function createGuide(ctx) {
       ctx.lineWidth = 6;
       chevron();
       ctx.globalAlpha = 0.9 * alpha;
-      ctx.strokeStyle = '#fff';
+      ctx.strokeStyle = color;
       ctx.lineWidth = 2.5;
       chevron();
       ctx.restore();
@@ -53,7 +55,7 @@ export function createGuide(ctx) {
       ctx.lineWidth = 3;
       ctx.strokeText(label, tx, ty);
       ctx.globalAlpha = 0.9 * alpha;
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = '#fff'; // (white, whatever the arrow's)
       ctx.fillText(label, tx, ty);
       ctx.restore();
     },

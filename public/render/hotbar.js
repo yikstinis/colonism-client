@@ -2,14 +2,17 @@
 // use, in square slots side by side on one plate as a label's card turned on its side (rounded at the
 // top, its thick white edge along the bottom, a thin white line round it), a thick black border inside
 // that line, the same between them; each one's key out from under its bottom edge, as a label's key
-// comes out from under its card's (rounded where it's out, filled white while it's held): the medkit (1), the knife and the gun (the mouse's buttons). A slot getting ready again is dark over what's left of the wait, going round
+// comes out from under its card's (rounded where it's out, filled white while it's held): the medkit (1), the roll (Space), the knife and the gun (the mouse's buttons). A slot getting ready again is dark over what's left of the wait, going round
 // clockwise from the top; a count in its bottom right corner (medkits left, rounds in the magazine).
-// A use flashes its slot.
+// A use flashes its slot. Over it, his experience: a thin gold bar as wide as it, filling to the next
+// level, his level by its left end; with a talent point to spend, in gold over it, what to press (T).
+// A new level flashes it.
 
-import { FONT, PLATE, EDGE } from '/render/labels.js';
+import { FONT, KEY as KEY_FONT, PLATE, EDGE, GOLD } from '/render/labels.js';
 
 const SIZE = 52, TAB = 18, ICON_SCALE = 1.6; // px: a slot, the key's tab; the icons drawn this much bigger than they're made
-const KEY_FONT = `700 10px ${FONT}`, COUNT = `700 11px ${FONT}`;
+const COUNT = `700 11px ${FONT}`, LEVEL = `700 11px ${FONT}`, HINT = `400 12px ${FONT}`;
+const XP_H = 5, XP_GAP = 6; // px: the experience bar's height, between it and the slots
 
 // The icons: plain white outlines, as simple as can be, centered on (x, y); dim: none left
 const LINE = 'rgba(255, 255, 255, 0.9)', DIM = 'rgba(255, 255, 255, 0.25)';
@@ -34,6 +37,21 @@ const ICONS = {
     ctx.moveTo(x - 5, y + 5); ctx.lineTo(x - 5, y + 9); ctx.lineTo(x + 6, y + 9); ctx.lineTo(x + 6, y + 5); // the wrist
     ctx.stroke();
   },
+  roll(ctx, x, y, dim) { // an arrow curling round most of the way, its head at the end
+    ctx.strokeStyle = ctx.fillStyle = dim ? DIM : LINE;
+    const r = 7, end = Math.PI * 1.6;
+    ctx.beginPath();
+    ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + end);
+    ctx.stroke();
+    const a = -Math.PI / 2 + end, hx = x + Math.cos(a) * r, hy = y + Math.sin(a) * r; // (the head, along the way round)
+    const tx = -Math.sin(a), ty = Math.cos(a), nx = Math.cos(a), ny = Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(hx + tx * 4, hy + ty * 4);
+    ctx.lineTo(hx - tx * 1 + nx * 3.5, hy - ty * 1 + ny * 3.5);
+    ctx.lineTo(hx - tx * 1 - nx * 3.5, hy - ty * 1 - ny * 3.5);
+    ctx.closePath();
+    ctx.fill();
+  },
   crosshair(ctx, x, y, dim) { // a ring, four ticks out of it, a dot in the middle
     ctx.strokeStyle = ctx.fillStyle = dim ? DIM : LINE;
     ctx.beginPath();
@@ -47,6 +65,7 @@ const ICONS = {
 // ctx: the canvas to draw on
 export function createHotbar(ctx) {
   const flash = new Map(); // key -> 1 as it's used, fading
+  let leveled = 0; // 1 at a new level, fading
 
   const textWidth = (str, font) => {
     ctx.font = font;
@@ -56,10 +75,13 @@ export function createHotbar(ctx) {
   return {
     // The slot with this key was used: it flashes
     used(key) { flash.set(key, 1); },
+    // A new level: the experience bar flashes
+    levelUp() { leveled = 1; },
 
     // slots: [{ key, icon (or null: empty), count (or null), cool (0..1: how much of its wait is
-    // left), held, dim }]; (cx, bottom): the bar's middle, its bottom (its keys' tabs'); dt: seconds
-    draw(slots, cx, bottom, dt) {
+    // left), held, dim }]; (cx, bottom): the bar's middle, its bottom (its keys' tabs'); dt: seconds;
+    // xp: { level, k (0..1 of the way to the next), points (talent points to spend) }
+    draw(slots, cx, bottom, dt, xp = null) {
       const w = slots.length * SIZE, left = Math.round(cx - w / 2) + 0.5, top = Math.round(bottom - TAB - SIZE) + 0.5;
       ctx.save();
       // The bar: one plate, rounded at the top, square at the bottom
@@ -130,17 +152,45 @@ export function createHotbar(ctx) {
         ctx.strokeStyle = EDGE;
         ctx.lineWidth = 1;
         ctx.stroke(tab);
-        ctx.font = KEY_FONT;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        ctx.font = KEY_FONT; // (centred on whole pixels by its capitals' height, as a label's key: never blurred thinner)
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = s.held ? '#000' : '#fff';
-        ctx.fillText(s.key, kx + kw / 2, ky + TAB / 2 + 1);
+        const cap = ctx.measureText('H').actualBoundingBoxAscent;
+        ctx.fillText(s.key, Math.round(kx + kw / 2 - ctx.measureText(s.key).width / 2), Math.round(ky + TAB / 2 + cap / 2));
       });
       ctx.strokeStyle = EDGE; // the thin white line round it, as the labels'
       ctx.lineWidth = 1;
       ctx.stroke(bar);
       ctx.fillStyle = '#fff'; // its thick white edge along the bottom, as a label's along its left
       ctx.fillRect(left - 0.5, top + SIZE - 1.5, w + 1, 3);
+      if (xp) {
+        leveled = Math.max(0, leveled - dt * 1.5);
+        const y = top - XP_GAP - XP_H;
+        ctx.fillStyle = PLATE;
+        ctx.fillRect(left, y, w, XP_H);
+        ctx.fillStyle = GOLD;
+        ctx.fillRect(left + 1, y + 1, Math.round((w - 2) * xp.k), XP_H - 2);
+        if (leveled > 0) {
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * leveled})`;
+          ctx.fillRect(left + 1, y + 1, w - 2, XP_H - 2);
+        }
+        ctx.strokeStyle = EDGE;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(left, y, w, XP_H);
+        ctx.font = LEVEL;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = xp.level ? GOLD : '#aaa';
+        ctx.fillText(`Lv ${xp.level}`, left - 6, y + XP_H / 2 + 0.5);
+        if (xp.points) {
+          ctx.font = HINT;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'alphabetic';
+          ctx.fillStyle = GOLD;
+          ctx.fillText(`Talent point! Press T`, cx, y - 8);
+        }
+      }
       ctx.restore();
     },
   };

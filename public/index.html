@@ -26,7 +26,14 @@
       border-radius: 0 5px 5px 0; box-shadow: none;
     }
     .quest .title { font-weight: 700; }
+    /* The debug window at the top left: the characters' state as it changes (see updateDebug in client.js) */
+    #debug {
+      position: fixed; top: 18px; left: 18px; margin: 0; padding: 6px 10px; pointer-events: none;
+      font: 11px/14px ui-monospace, Consolas, monospace; color: #ddd; white-space: pre;
+      background: rgba(0, 0, 0, 0.7); border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 0 5px 5px 0;
+    }
     .quest .step { margin-top: 2px; color: #aaa; }
+    .quest .about { margin-top: 2px; color: #ccc; } /* what it's about, over its steps */
     .quest .step.done, .quest.done .title { color: #fff; }
     .quest .way { margin-left: 3px; color: #666; }
     .quest .way.on, .quest .pct { color: #fff; }
@@ -47,6 +54,8 @@
   <!-- The controls hint is hidden for now (drop `hidden` to show it) -->
   <div id="hud" hidden>Connecting…</div>
   <div id="quest" class="quest"></div>
+  <!-- The debug window is hidden for now (drop `hidden` to show it) -->
+  <pre id="debug" hidden></pre>
   <script type="module" src="/client.js"></script>
 </body>
 </html>

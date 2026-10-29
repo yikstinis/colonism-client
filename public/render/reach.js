@@ -1,15 +1,20 @@
 // Where a knife slash reaches: a sector on the sand in front of the hero, towards where he aims, under
 // everything standing or lying there, fading out to its sides. Faint while he's armed, so the reach
-// shows; in a slash it flares up;
-// from then till the knife's ready again it's pink, going back to white.
+// shows; in a slash it flares up. From then till the knife's ready again its dashed edge goes pale and
+// fills back in along it, clockwise from one side to the other; full, it flashes a little.
 // The gun's range goes on beyond it as a dashed line, a small arc at its end; firing, the cone
 // between (where the rounds go) is lit faintly, flaring with each one. Anything solid in the way (the
 // capsule, a fire) cuts them all short.
+
+import { lifeRing, RING_THICK } from '/render/life.js';
 
 // ctx: the canvas to draw on
 export function createReach(ctx) {
   let flare = 0; // 1 right after a slash, fading out
   let shown = 1; // fades to 0 while hidden (in a roll), and back
+  let ready = 0; // 1 as the knife's ready again, fading out
+  let wasCooling = 0;
+  let rollReady = 0, rollWasCooling = 0; // the same for the roll
   return {
     // (x, y): the hero's feet on screen; radius: px; angle: towards the aim (screen, radians); arc:
     // the sector's width (radians); slash: how far through a slash (0..1), or null; dt: seconds;
@@ -18,13 +23,16 @@ export function createReach(ctx) {
     // limit(a, px): how far (px) a reach along screen angle a gets before something solid stops it;
     // spread: how far the gun's aim sways either way (radians); fire: how lit the cone is (0: not
     // firing; 1 as a round goes off, fading to a glow while the trigger's held); cooling: how far the
-    // knife has yet to go till it's ready again (1 as a slash starts, 0 ready): the sector pink, then white
+    // knife has yet to go till it's ready again (1 as a slash starts, 0 ready): its edge that much
+    // short of filled in
     draw(x, y, radius, angle, arc, slash, dt, hidden = false, range = 0, limit = (a, px) => px, spread = 0, fire = 0, cooling = 0) {
       flare = slash !== null ? 1 : Math.max(0, flare - dt * 3);
       shown = hidden ? 0 : Math.min(1, shown + dt / 0.15); // gone in a frame, back gently
+      ready = wasCooling > 0 && cooling <= 0 ? 1 : Math.max(0, ready - dt * 4);
+      wasCooling = cooling;
       if (shown <= 0) return;
       const from = angle - arc / 2;
-      const tint = `255, ${Math.round(255 - 115 * cooling)}, ${Math.round(255 - 125 * cooling)}`; // (white, or as pink as it has yet to cool)
+      const tint = '255, 255, 255';
       // No side edges: brightest where he aims, fading out to nothing towards both sides (a gradient
       // round the hero), the fill and the outer edge alike
       const fade = (alpha) => {
@@ -47,14 +55,29 @@ export function createReach(ctx) {
       ctx.moveTo(x, y);
       for (const [px, py] of edge) ctx.lineTo(px, py);
       ctx.closePath();
-      ctx.fillStyle = fade(0.05 + 0.07 * flare + 0.05 * cooling); // (a touch stronger while pink, so it shows)
+      ctx.fillStyle = fade(0.05 + 0.07 * flare);
       ctx.fill();
       ctx.beginPath();
       edge.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]); // the reach's edge, dashed
-      ctx.strokeStyle = fade(0.3 + 0.2 * flare);
+      ctx.strokeStyle = fade(cooling > 0 ? 0.12 : 0.3 + 0.2 * flare + 0.25 * ready); // (pale while the knife's getting ready)
       ctx.stroke();
+      if (cooling > 0) { // getting ready: the edge filled in as far as it's got, clockwise (its dashes on the pale ones)
+        const n = (1 - cooling) * STEPS, i0 = Math.floor(n), [ax, ay] = edge[i0], [bx, by] = edge[Math.min(i0 + 1, STEPS)];
+        ctx.beginPath();
+        edge.slice(0, i0 + 1).forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+        ctx.lineTo(ax + (bx - ax) * (n - i0), ay + (by - ay) * (n - i0));
+        // (even along it, only its very ends fading, so it fills in steadily to the last)
+        const g = ctx.createConicGradient(from, x, y), span = arc / (Math.PI * 2);
+        g.addColorStop(0, `rgba(${tint}, 0.1)`);
+        g.addColorStop(span * 0.15, `rgba(${tint}, 0.4)`);
+        g.addColorStop(span * 0.85, `rgba(${tint}, 0.4)`);
+        g.addColorStop(span, `rgba(${tint}, 0.1)`);
+        g.addColorStop(1, `rgba(${tint}, 0)`);
+        ctx.strokeStyle = g;
+        ctx.stroke();
+      }
       ctx.setLineDash([]);
       // Firing: the cone the rounds go into, lit faintly (paler than a slash): from just past the
       // knife's reach (where the range's dashed line starts) out to the range's arc
@@ -112,30 +135,41 @@ export function createReach(ctx) {
       ctx.restore();
     },
 
-    // His health: a ring round him on the sand, dashed, a dash for each point, going round from the
-    // back (back: straight back from the aim, screen radians; lost ones faint white, going first), the disc
-    // inside lit faintly: green, full; the less he has, the redder, and the more it pulses (faster,
-    // deeper). The dashes stay as they are. time: seconds, for the pulse
-    health(x, y, radius, back, hp, max, time) {
-      if (shown <= 0) return;
-      const hurt = 1 - hp / max, mix = (a, b) => Math.round(a + (b - a) * hurt);
-      const tint = `${mix(110, 255)}, ${mix(230, 95)}, ${mix(120, 80)}`; // (green, to red)
-      const pulse = 1 + 0.7 * hurt * Math.sin(time * Math.PI * 2 * (0.8 + 1.6 * hurt)); // (none at full health)
+    // The roll getting ready again: a plain unbroken ring round him at radius px (a ring in from his
+    // health's, as thick as its bars): faint white while it's ready; from a roll on (cooling: how far it
+    // has yet to go, 1 to 0) paler, filling in brighter, clockwise from straight behind him (back:
+    // straight back from the aim, screen radians); full, it flashes a little. In a roll too
+    roll(x, y, radius, back, cooling, dt) {
+      rollReady = rollWasCooling > 0 && cooling <= 0 ? 1 : Math.max(0, rollReady - dt * 4);
+      rollWasCooling = cooling;
       ctx.save();
-      ctx.globalAlpha = shown;
+      ctx.lineWidth = RING_THICK;
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${tint}, ${(0.07 + 0.05 * hurt) * pulse})`;
-      ctx.fill();
-      ctx.lineWidth = 1.5;
-      const step = (Math.PI * 2) / max, gap = step * 0.3;
-      for (let i = 0; i < max; i++) { // (from straight back, clockwise on screen; the last ones lost first)
-        const a = back + i * step - step / 2;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${cooling > 0 ? 0.06 : 0.15 + 0.4 * rollReady})`;
+      ctx.stroke();
+      if (cooling > 0) {
         ctx.beginPath();
-        ctx.arc(x, y, radius, a + gap / 2, a + step - gap / 2);
-        ctx.strokeStyle = i < hp ? 'rgba(110, 230, 120, 0.45)' : 'rgba(255, 255, 255, 0.15)'; // (green, steady; lost: faint white)
+        ctx.arc(x, y, radius, back, back + Math.PI * 2 * (1 - cooling));
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.stroke();
       }
+      ctx.restore();
+    },
+
+    // His health: its ring round him on the sand (see life.js), at full life whole, going from in front
+    // (back: straight back from the aim, screen radians); the disc inside lit faintly: white, full; the
+    // less he has, the redder, and the more it pulses (faster, deeper). time: seconds, for the pulse
+    health(x, y, radius, back, hp, max, time) { // (it stays in a roll, as the reach doesn't)
+      const hurt = 1 - hp / max, mix = (a, b) => Math.round(a + (b - a) * hurt);
+      const tint = `${mix(255, 235)}, ${mix(255, 130)}, ${mix(255, 120)}`; // (white, to a soft red)
+      const pulse = 1 + 0.7 * hurt * Math.sin(time * Math.PI * 2 * (0.8 + 1.6 * hurt)); // (none at full health)
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${tint}, ${(0.008 + 0.177 * hurt * hurt) * pulse})`; // (barely there at full health; low, plain to see)
+      ctx.fill();
+      lifeRing(ctx, x, y, radius, back, hp, max);
       ctx.restore();
     },
   };

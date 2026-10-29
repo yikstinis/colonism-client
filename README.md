@@ -26,13 +26,15 @@ shows it as a globe turning under the hero, the capsule marked on it.
 - `public/render/labels.js` — names over things and the pick-up prompt (hold-E key).
 - `public/render/guide.js` — the arrow on the ground around the hero pointing at the current quest's target, with the distance to it.
 - `public/render/reach.js` — the knife's reach on the ground in front of the armed hero, flaring in a slash.
+- `public/render/life.js` — health, the hero's and the bugs' (and the bottles' and the bag's) alike: a short red bar for each point, in rows (rings round the hero) that fade the farther out they go.
+  A unit's health should ideally go no higher than **375**: that's 15 rows over it, the last just visible; past that the rows can't be seen and hits stop showing.
 - `public/render/shots.js` — a round's muzzle flash and tracer.
 - `public/sounds.js` — the sounds, made on the fly with Web Audio (no files): the gun's shots, the knife, steps and rolls, the desert's wind, fires crackling.
 - `public/render/speech.js` — what the hero says, typed out over his head.
 - `public/render/view.js` — top-down camera (70 degrees, same as `ELEV` in the art generator).
 - `tools/make-art.mjs` — generates the art and `sprites.json` (`npm run art`, ~1.5 min):
   the hero is a smooth 3D body (`tools/lib/sdf-body.mjs`) rendered into pixel art, and so are the landing capsule,
-  the backpack, the wrecked army bed by it, a crate of bottles to shoot, past it a smashed bedside table and a punching bag to try the knife on; out west, at the safe place, a big olive army tent.
+  the backpack, the wrecked army bed by it, a crate of bottles to shoot, past it a smashed bedside table and a punching bag to try the knife on.
 
 Env: `PORT`.
 

@@ -1,16 +1,19 @@
 // Generates the game art (top-down view, camera 70 degrees) into public/assets/ plus sprites.json.
 //   npm run art              everything (~3 min)
-//   ONLY=pod npm run art     just some parts (hero, hero_pack, pod, backpack, bed, stand, bedding, tent, ...); the rest is kept as is
+//   (the heroes' frames are drawn on all the cores: a worker thread each, WORKERS=n to say how many)
+//   ONLY=pod npm run art     just some parts (hero, hero_pack, pod, backpack, bed, stand, bedding, ...); the rest is kept as is
 // Real art can replace the PNGs later as long as it keeps the layout from sprites.json.
 
 import fs from 'node:fs';
+import os from 'node:os';
+import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ramp, rng, Sheet } from './lib/image.mjs';
 import { SHADOW_LIGHT, bodySdf, box, capsule, cone, ellipsoid, renderBody, renderShadow } from './lib/sdf-body.mjs';
 import {
-  AIM_IN_TIME, AIM_OFFSETS, AIM_OUT_TIME, BACKPACK, RELOAD_TIME, CROUCH_CYCLE, BED, BEDDING, BEDDING_FIRES, BLANKET, FIRE_ROUNDS, GAIT_CYCLE, GLADE_R, MATTRESS, PICK_GRAB,
-  CRATER_R, PICK_TIME, PILLOW, POD, POD_FIRES, POD_SCALE, ROLL_TIME, STRIKE_SLANT, STRIKE_WAY, SLASH_TIME, STAND, TENT, TENT_SIZE,
+  AIM_IN_TIME, AIM_OFFSETS, AIM_OUT_TIME, BACKPACK, BUG_BITE_SNAP, BUG_BITE_TIME, RELOAD_TIME, CROUCH_CYCLE, BED, BEDDING, BEDDING_FIRES, BLANKET, FIRE_ROUNDS, GAIT_CYCLE, GLADE_R, MATTRESS, PICK_GRAB,
+  CRATER_R, PICK_TIME, PILLOW, POD, POD_FIRES, POD_SCALE, ROLL_TIME, STRIKE_SLANT, STRIKE_WAY, SLASH_TIME, STAND, TURRET_FRAMES, GARAGE, GARAGE_SIZE, GARAGE_LEAF,
 } from '../shared/world.js';
 
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets');
@@ -680,7 +683,7 @@ const CROUCH_LOOP = 4, SNEAK = 8, SNEAK_CYCLE = CROUCH_CYCLE;
 const SLASH = 10;
 // The gun: frames to bring it up or down; firing loops, two frames a round (the kick, back)
 const AIM_FRAMES = 4, BURST = 2 * FIRE_ROUNDS;
-const RELOAD = 12; // the reload's frames, played once over RELOAD_TIME
+const RELOAD = 12, RELOAD_RUN = 24; // the reload's frames, played once over RELOAD_TIME: standing, on the move (more: the legs run on)
 const FIRE_ANIM = { stand: 'fire', run: 'fireRun', back: 'fireBack', left: 'fireStrafeL', right: 'fireStrafeR' };
 const pickDepth = (t) => smoothstep(0, PICK_GRAB - 0.05, t) * (1 - smoothstep(PICK_GRAB + 0.05, 1, t));
 
@@ -705,8 +708,9 @@ function progress(name, total, unit) {
   };
 }
 
-// name: the sheet's name (and its shadow's); packed: with the backpack, the pistol and the knife
-function makeHero(name, packed = false) {
+// The hero's animations, in column order: [name, frames, fps, (frame, yaw) => pose, muzzle (its
+// muzzle goes in the manifest)]; packed: with the backpack, the pistol and the knife
+function heroAnims(packed = false) {
   const cycle = (i, n) => (i / n) * Math.PI * 2;
   // The armed animations, standing up (crouch 0) or crouched (1, 'c' before the name; sneaking on
   // the move, the legs' cycle CROUCH_CYCLE). The knife: a slash (played once over SLASH_TIME),
@@ -725,6 +729,9 @@ function makeHero(name, packed = false) {
         (i, yaw) => body(Math.PI * 2 * ((i / SLASH) * SLASH_TIME) / cycleOf(gait), true, 0, yaw, packed, gait, 0, i / SLASH, crouch)]),
       [c + 'aimIn', AIM_FRAMES, AIM_FRAMES / AIM_IN_TIME, (i, yaw) => body(0, false, 0, yaw, packed, 'run', 0, null, crouch, aim(smoothstep(0, 1, (i + 1) / AIM_FRAMES)))],
       [c + 'reload', RELOAD, RELOAD / RELOAD_TIME, (i, yaw) => body(0, false, 0, yaw, packed, 'run', 0, null, crouch, null, (i + 0.5) / RELOAD)],
+      // (on the move, in each gait: the legs going on from the start of their cycle, as with a slash)
+      ...[['reloadRun', 'run'], ['reloadBack', 'back'], ['reloadL', 'left'], ['reloadR', 'right']].map(([anim, gait]) => [c + anim, RELOAD_RUN, RELOAD_RUN / RELOAD_TIME,
+        (i, yaw) => body(Math.PI * 2 * ((i / RELOAD_RUN) * RELOAD_TIME) / cycleOf(gait), true, 0, yaw, packed, gait, 0, null, crouch, null, (i + 0.5) / RELOAD_RUN)]),
       [c + 'aimOut', AIM_FRAMES, AIM_FRAMES / AIM_OUT_TIME, (i, yaw) => body(0, false, 0, yaw, packed, 'run', 0, null, crouch, aim(1 - smoothstep(0, 1, (i + 1) / AIM_FRAMES)))],
       ...['stand', 'run', 'back', 'left', 'right'].flatMap((gait) => AIM_OFFSETS.map((off, v) => [
         c + FIRE_ANIM[gait] + ['-', '', '+'][v], BURST, BURST / cycleOf(gait),
@@ -752,33 +759,54 @@ function makeHero(name, packed = false) {
     // Armed: the knife and the gun, standing up and crouched ('c' before the name)
     ...(packed ? [0, 1].flatMap(armed) : []),
   ];
+  return anims;
+}
+
+// Frame i of animation a (heroAnims' index) facing row (DIRS): its body and its cast shadow (RGBA),
+// and the gun's muzzle if it goes in the manifest
+function heroFrame(anims, a, i, row) {
+  const [, , , pose, muzzle] = anims[a];
+  const yaw = (row * Math.PI) / 4;
+  const { sdf, material, shape } = pose(i, yaw);
+  // The gun's muzzle, model space (meters: +x the figure's left, +y forward, z up), on its aim
+  const m = muzzle && i === 1 && row === 0 ? lastMuzzle.map((v) => Math.round(v * 1000) / 1000) : null;
+  const img = renderBody(sdf, {
+    W: HERO, H: HERO, anchor: HERO_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw,
+    camDist: 5.5, focusZ: 0.9, ramps: [SKIN, SUIT, CLOTH, BELT, PACK_RAMPS[CANVAS], PACK_RAMPS[STRAP], PACK_RAMPS[BUCKLE], PACK_RAMPS[MAT], PACK_RAMPS[POCKET], GOLD], material, outline: [16, 9, 7],
+  });
+  const shadow = renderShadow(shape, {
+    W: SHADOW_W, H: SHADOW_H, anchor: SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw,
+    camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55,
+  });
+  return { img, shadow, muzzle: m };
+}
+
+// name: the sheet's name (and its shadow's); packed: with the backpack, the pistol and the knife.
+// Its frames are drawn by worker threads (this module again, see the end), a share each
+async function makeHero(name, packed = false) {
+  const anims = heroAnims(packed);
   const cols = anims.reduce((n, a) => n + a[1], 0);
   const color = new Sheet(cols * HERO, DIRS.length * HERO);
   const shadows = new Sheet(cols * SHADOW_W, DIRS.length * SHADOW_H);
-  const animations = {};
-  const tick = progress(name, cols * DIRS.length, 'frames');
+  const animations = {}, jobs = [];
   let col = 0;
-  for (const [anim, frames, fps, pose, muzzle] of anims) {
+  anims.forEach(([anim, frames, fps], a) => {
     animations[anim] = { start: col, frames, fps };
-    for (let i = 0; i < frames; i++, col++)
-      DIRS.forEach((_, row) => {
-        const yaw = (row * Math.PI) / 4;
-        const { sdf, material, shape } = pose(i, yaw);
-        // The gun's muzzle, model space (meters: +x the figure's left, +y forward, z up), on its aim
-        if (muzzle && i === 1 && row === 0) animations[anim].muzzle = lastMuzzle.map((v) => Math.round(v * 1000) / 1000);
-        const img = renderBody(sdf, {
-          W: HERO, H: HERO, anchor: HERO_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw,
-          camDist: 5.5, focusZ: 0.9, ramps: [SKIN, SUIT, CLOTH, BELT, PACK_RAMPS[CANVAS], PACK_RAMPS[STRAP], PACK_RAMPS[BUCKLE], PACK_RAMPS[MAT], PACK_RAMPS[POCKET], GOLD], material, outline: [16, 9, 7],
-        });
-        color.blit(img, HERO, HERO, col * HERO, row * HERO);
-        const shadow = renderShadow(shape, {
-          W: SHADOW_W, H: SHADOW_H, anchor: SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw,
-          camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55,
-        });
-        shadows.blit(shadow, SHADOW_W, SHADOW_H, col * SHADOW_W, row * SHADOW_H);
-        tick();
-      });
-  }
+    for (let i = 0; i < frames; i++, col++) DIRS.forEach((_, row) => jobs.push({ a, i, row, col }));
+  });
+  const tick = progress(name, jobs.length, 'frames');
+  const n = Math.max(1, Math.min(jobs.length, Number(process.env.WORKERS) || os.cpus().length));
+  await Promise.all(Array.from({ length: n }, (_, w) => new Promise((resolve, reject) => {
+    const worker = new Worker(new URL(import.meta.url), { workerData: { packed, jobs: jobs.filter((_, j) => j % n === w) } });
+    worker.on('message', ({ a, i, row, col, img, shadow, muzzle }) => {
+      if (muzzle) animations[anims[a][0]].muzzle = muzzle;
+      color.blit(img, HERO, HERO, col * HERO, row * HERO);
+      shadows.blit(shadow, SHADOW_W, SHADOW_H, col * SHADOW_W, row * SHADOW_H);
+      tick();
+    });
+    worker.on('error', reject);
+    worker.on('exit', (code) => (code ? reject(new Error(`a worker for ${name} stopped (${code})`)) : resolve()));
+  })));
   save(color, `${name}.png`);
   save(shadows, `${name}_shadow.png`);
   return {
@@ -1147,107 +1175,364 @@ function makeStand() {
   return { image: 'stand.png', frame: [STAND_W, STAND_H], anchor: STAND_ANCHOR };
 }
 
-// ---------- The safe place: a huge army tent, olive canvas: a pavilion (hip roof, a scalloped valance) ----------
+// ---------- The safe space's campfire: logs burning in a ring of stones ----------
 
-const TENT_W = 600, TENT_H = 460, TENT_ANCHOR = [300, 250];
-const TENT_SHADOW_W = 600, TENT_SHADOW_H = 460, TENT_SHADOW_ANCHOR = [300, 250];
-const TENT_RAMPS = [
-  ramp('#0b0d06', '#13170b', '#1c2210', '#252d15', '#2f391a', '#3a4520', '#465227', '#53602f'), // olive drab canvas
-  ramp('#090b05', '#0f1208', '#16190c', '#1d2110', '#252a14', '#2e3418', '#383f1d', '#434a23'), // its seams, darker
-  ramp('#1a0a03', '#2e1306', '#461d08', '#62290a', '#80370c', '#a0490f', '#c25f16', '#e07a22'), // the inside, lamplit
-  ramp('#120c06', '#1e140a', '#2b1d0f', '#392714', '#48311a', '#583c20', '#684827', '#78542e'), // wood: poles, stakes
-  ramp('#1a160e', '#2a2416', '#3b331f', '#4d4329', '#605434', '#73653f', '#86774b', '#998958'), // khaki: the valance, the curtains, rope, sandbags
-  ramp('#1c0605', '#300a08', '#46100b', '#5e160e', '#781d12', '#922516', '#ad2f1c', '#c73b23'), // the pennant, red
+const CAMPFIRE_W = 80, CAMPFIRE_H = 72, CAMPFIRE_ANCHOR = [40, 42];
+const CAMPFIRE_DECAL_W = 96, CAMPFIRE_DECAL_H = 80, CAMPFIRE_DECAL_ANCHOR = [48, 40];
+const CAMPFIRE_RAMPS = [
+  ramp('#0f0f10', '#1b1b1d', '#29292b', '#38383a', '#48474a', '#59585a', '#6b696b', '#7e7b7c'), // stones: grey
+  ramp('#0e0805', '#190e08', '#25160c', '#321e10', '#402715', '#4f311a', '#5e3b20', '#6e4626'), // bark
+  ramp('#060505', '#0b0908', '#110e0c', '#181411', '#201a16', '#28211b', '#312821', '#3a3027'), // char
+  ramp('#8a1e08', '#a72a0c', '#c33a10', '#da4e16', '#ea661e', '#f58028', '#fb9c38', '#ffbb52'), // embers
+  ramp('#1c1a18', '#2b2825', '#3b3733', '#4c4742', '#5d5852', '#6f6963', '#817b74', '#948d86'), // ash
 ];
-const [T_CANVAS, T_SEAM, T_INSIDE, T_POLE, T_KHAKI, T_FLAG] = [0, 1, 2, 3, 4, 5];
-const TENT_WALL = 3.6, TENT_RIDGE = 6.0; // meters: its walls' height, its ridge's
-const TENT_DOOR = [1.3, 3.0, 1.6]; // its door: half its width, its height, how deep the lamplit inside shows through it
+const [C_STONE, C_BARK, C_CHAR, C_EMBER, C_ASH] = [0, 1, 2, 3, 4];
 
-// Model space, meters: a big pavilion along x: tall straight walls hanging in folds, a hip roof (four
-// slopes, its ridge along x) dipping a little between the eaves and the ridge, a scalloped valance
-// hanging round the eaves; its door in the middle of its +y side (the one facing the camera), the
-// curtains drawn back and tied to either side, the lamplit inside showing; a pole up from the ridge's
-// middle with a red pennant; guy ropes from the eaves to stakes in the sand (none before the door), a
-// low wall of sandbags either side of it
-function tentModel() {
-  const [A, B] = TENT_SIZE, H = TENT_RIDGE - TENT_WALL, run = Math.hypot(H, B);
-  const dip = (z) => 0.22 * Math.sin(Math.PI * Math.max(0, Math.min(1, (z - TENT_WALL) / H))); // (the slopes dipping between the eaves and the ridge)
-  const roofD = (x, y, z) => Math.max(H * Math.abs(y) + B * (z - TENT_RIDGE), H * Math.abs(x) + B * (z - TENT_RIDGE) - H * (A - B)) / run + dip(z); // (out from the roof)
-  const fold = (s) => 0.035 * Math.sin(s * 9); // (the walls hanging in folds)
-  const [DW, DH, DD] = TENT_DOOR;
-  const valance = (x, y, z) => { // a band round the eaves, its hem scalloped
-    const shell = Math.max(Math.max(Math.abs(x) - A - 0.14, Math.abs(y) - B - 0.14), -Math.max(Math.abs(x) - A - 0.06, Math.abs(y) - B - 0.06));
-    const along = Math.abs(y) - B > Math.abs(x) - A ? x : y, hem = TENT_WALL - 0.55 + 0.14 * Math.abs(Math.sin((along * Math.PI) / 0.55));
-    return Math.max(shell, hem - z, z - TENT_WALL - 0.05);
-  };
-  const body = (x, y, z) => {
-    const walls = Math.max(Math.abs(x) - A + fold(y), Math.abs(y) - B + fold(x), -z, roofD(x, y, z));
-    const eaves = Math.max(Math.abs(roofD(x, y, z)) - 0.05, Math.abs(x) - A - 0.16, Math.abs(y) - B - 0.16, TENT_WALL - 0.1 - z);
-    const door = Math.max(B - DD - y, Math.abs(x) - DW, z - DH); // (cut into it: its inside)
-    const floor = Math.max(z - 0.03, B - DD - 0.05 - y, y - B, Math.abs(x) - DW - 0.05); // (its floor in there)
-    return Math.min(Math.max(Math.min(walls, eaves), -door), floor);
-  };
-  const parts = { [T_POLE]: [], [T_KHAKI]: [], [T_FLAG]: [], rope: [] };
-  parts[T_POLE].push(capsule([0, 0, TENT_RIDGE - 0.2], [0, 0, TENT_RIDGE + 1.6], 0.06)); // the pole on top
-  parts[T_POLE].push(ellipsoid([0, 0, TENT_RIDGE + 1.65], [0.11, 0.11, 0.11]));
-  parts[T_FLAG].push(box([0.8, 0, TENT_RIDGE + 1.3], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0.75, 0.03, 0.26], 0.01)); // the pennant
-  for (const side of [-1, 1]) { // the curtains, drawn back: gathered at the door's sides, tied at the middle, spreading below
-    parts[T_KHAKI].push(cone([side * (DW + 0.1), B + 0.12, DH + 0.05], [side * (DW + 0.05), B + 0.18, 1.5], 0.18, 0.1));
-    parts[T_KHAKI].push(cone([side * (DW + 0.05), B + 0.18, 1.5], [side * (DW - 0.05), B + 0.2, 0], 0.1, 0.34));
+// Model space, meters, its middle at the origin: a ring of rough stones round a bed of ash and embers;
+// firewood stacked over it in a square crib, layer across layer, the lower ones charred and glowing;
+// two more logs lying by it, ready to go on
+function campfireModel() {
+  const parts = CAMPFIRE_RAMPS.map(() => []);
+  const r = rng(7);
+  for (let i = 0; i < 11; i++) { // the stones, each its own size and turn
+    const a = (i / 11) * Math.PI * 2 + (r() - 0.5) * 0.2, d = 0.48 + (r() - 0.5) * 0.04, s = 0.09 + r() * 0.04;
+    parts[C_STONE].push(ellipsoid([Math.cos(a) * d, Math.sin(a) * d, s * 0.45], [s * 1.25, s, s * 0.8]));
   }
-  parts[T_KHAKI].push(box([0, B + 0.1, DH + 0.1], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [DW + 0.15, 0.06, 0.12], 0.04)); // over the door
-  const stake = (p) => parts[T_POLE].push(capsule([p[0], p[1], 0], [p[0], p[1], 0.2], 0.03, 0.035));
-  for (const x of [-A + 0.2, -A / 2, 0, A / 2, A - 0.2])
-    for (const side of [-1, 1]) {
-      if (side > 0 && Math.abs(x) < DW + 2.2) continue; // (the ground before the door clear)
-      const from = [x, side * (B + 0.15), TENT_WALL - 0.1], to = [x, side * (B + 1.8), 0.08];
-      parts.rope.push(capsule(from, to, 0.02));
-      stake(to);
+  parts[C_ASH].push(ellipsoid([0, 0, 0], [0.4, 0.4, 0.05])); // the ash bed
+  for (const [x, y, s] of [[0.08, 0.05, 0.07], [-0.1, 0.02, 0.06], [0.02, -0.12, 0.065], [-0.04, 0.13, 0.05], [0.15, -0.06, 0.05]])
+    parts[C_EMBER].push(ellipsoid([x, y, 0.04], [s, s * 0.9, s * 0.55])); // embers on it
+  for (let layer = 0; layer < 4; layer++) { // the logs, stacked in a square crib, each layer across the last
+    const z = 0.07 + layer * 0.11, across = layer % 2;
+    for (const off of [-0.19, 0.19]) {
+      const from = across ? [off, -0.32, z] : [-0.32, off, z], to = across ? [off, 0.32, z] : [0.32, off, z];
+      const mid = from.map((v, k) => (v + to[k]) / 2);
+      parts[layer < 2 ? C_CHAR : C_BARK].push(capsule(from, to, 0.06)); // (burnt black low down, where the fire's at them)
+      if (layer < 2) parts[C_EMBER].push(ellipsoid([mid[0] * 0.8, mid[1] * 0.8, z], [0.06, 0.06, 0.03])); // glowing where they're burning
     }
-  for (const side of [-1, 1])
-    for (const y of [-B / 2, B / 2]) {
-      const from = [side * (A + 0.15), y, TENT_WALL - 0.1], to = [side * (A + 1.8), y, 0.08];
-      parts.rope.push(capsule(from, to, 0.02));
-      stake(to);
-    }
-  for (const side of [-1, 1]) // sandbags by the door: a low wall of them either side, two high
-    for (const [dx, dy, dz] of [[DW + 0.7, 0.45, 0.13], [DW + 1.3, 0.45, 0.13], [DW + 1.9, 0.45, 0.13], [DW + 1.0, 0.47, 0.37], [DW + 1.6, 0.47, 0.37]])
-      parts[T_KHAKI].push(ellipsoid([side * dx, B + dy, dz], [0.32, 0.22, 0.14]));
-  const fields = [T_POLE, T_KHAKI, T_FLAG].map((m) => [m, bodySdf([{ k: 0.01, prims: parts[m] }], 0.01)]);
-  const rope = bodySdf([{ k: 0.001, prims: parts.rope }], 0.001);
-  const shape = (x, y, z) => Math.max(Math.min(body(x, y, z), valance(x, y, z), rope(x, y, z), ...fields.map(([, f]) => f(x, y, z))), -z);
+  }
+  parts[C_BARK].push(capsule([0.62, 0.32, 0.05], [1.05, 0.12, 0.05], 0.05)); // the spare logs, by it
+  parts[C_BARK].push(capsule([0.66, 0.45, 0.05], [1.02, 0.36, 0.06], 0.045));
+  const fields = parts.map((prims) => bodySdf([{ k: 0.01, prims }], 0.004));
   return {
-    shape,
+    sdf: (x, y, z) => Math.max(Math.min(...fields.map((f) => f(x, y, z))), -z),
     material: (x, y, z) => {
-      let best = body(x, y, z), m = T_CANVAS;
-      for (const [k, f] of [...fields, [T_KHAKI, valance], [T_KHAKI, rope]]) { const d = f(x, y, z); if (d < best) { best = d; m = k; } }
-      if (m !== T_CANVAS) return m;
-      if (y > B - DD - 0.01 && y < B - 0.05 && Math.abs(x) < DW + 0.01 && z < DH + 0.01) return T_INSIDE; // in the doorway
-      const roof = z > TENT_WALL - 0.12, s = roof ? (Math.abs(y) - B > Math.abs(x) - A ? x : y) : Math.abs(y) - B > Math.abs(x) - A ? x : y;
-      const seam = Math.abs(((s / (roof ? 1.1 : 1.5)) % 1 + 1) % 1 - 0.5) > 0.47; // the panels' seams
-      return seam ? T_SEAM : T_CANVAS;
+      let best = 0, d = 1e9;
+      fields.forEach((f, i) => { if (f(x, y, z) < d) { d = f(x, y, z); best = i; } });
+      return best;
     },
   };
 }
 
-function makeTent() {
-  // Each thing is drawn by a camera of its own, over it: the capsule's is close, but so big a thing
-  // that close would have the camera over its front (its door, seen from behind: gone), so this one's
-  // far off, looking down at the game's own angle (ELEV), its front, door and all, in sight
-  const K = 1, model = tentModel();
-  const shape = (x, y, z) => model.shape(x * K, y * K, z * K) / K, sdf = shape, material = (x, y, z) => model.material(x * K, y * K, z * K);
-  const view = { pxPerM: PX_PER_M * K, elev: ELEV, yaw: TENT.yaw, camDist: 60, focusZ: 0.9 };
-  const img = renderBody(sdf, { W: TENT_W, H: TENT_H, anchor: TENT_ANCHOR, ...view, ramps: TENT_RAMPS, material, outline: [6, 7, 4], bound: [2, 8] });
-  const sh = new Sheet(TENT_W, TENT_H);
-  sh.blit(img, TENT_W, TENT_H, 0, 0);
-  save(sh, 'tent.png');
-  const shadow = renderShadow(shape, { W: TENT_SHADOW_W, H: TENT_SHADOW_H, anchor: TENT_SHADOW_ANCHOR, ...view, light: SHADOW_LIGHT, alpha: 0.55, reach: 8 / K });
-  const ss = new Sheet(TENT_SHADOW_W, TENT_SHADOW_H);
-  ss.blit(shadow, TENT_SHADOW_W, TENT_SHADOW_H, 0, 0);
-  save(ss, 'tent_shadow.png');
+// The ground round it scorched: a dark, dithered ring of soot, thinning out (the sand shows through)
+function campfireDecal() {
+  const c = new Uint8ClampedArray(CAMPFIRE_DECAL_W * CAMPFIRE_DECAL_H * 4);
+  const se = Math.sin(ELEV), R = 0.95;
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  for (let py = 0; py < CAMPFIRE_DECAL_H; py++)
+    for (let px = 0; px < CAMPFIRE_DECAL_W; px++) {
+      const gx = (px + 0.5 - CAMPFIRE_DECAL_ANCHOR[0]) / PX_PER_M, gy = (py + 0.5 - CAMPFIRE_DECAL_ANCHOR[1]) / (PX_PER_M * se);
+      const a = Math.atan2(gy, gx), d = Math.hypot(gx, gy) / (R * (1 + 0.08 * Math.sin(a * 5 + 2))) + (hash(px >> 1, py >> 1) - 0.5) * 0.1;
+      if (d >= 1) continue;
+      const k = Math.min(1, (1 - d) / 0.5), th = (BAYER4[(py % 4) * 4 + (px % 4)] + 0.5) / 16;
+      if (k > th * 0.8) c.set([14, 11, 10, Math.round(150 * k)], (py * CAMPFIRE_DECAL_W + px) * 4);
+    }
+  return c;
+}
+
+function makeCampfire() {
+  const { sdf, material } = campfireModel();
+  const img = renderBody(sdf, {
+    W: CAMPFIRE_W, H: CAMPFIRE_H, anchor: CAMPFIRE_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+    camDist: 5.5, focusZ: 0.3, ramps: CAMPFIRE_RAMPS, material, outline: [8, 7, 6], bound: [0.3, 1.2],
+  });
+  const sh = new Sheet(CAMPFIRE_W, CAMPFIRE_H);
+  sh.blit(img, CAMPFIRE_W, CAMPFIRE_H, 0, 0);
+  save(sh, 'campfire.png');
+  const decal = new Sheet(CAMPFIRE_DECAL_W, CAMPFIRE_DECAL_H);
+  decal.blit(campfireDecal(), CAMPFIRE_DECAL_W, CAMPFIRE_DECAL_H, 0, 0);
+  save(decal, 'campfire_decal.png');
   return {
-    image: 'tent.png', frame: [TENT_W, TENT_H], anchor: TENT_ANCHOR,
-    shadow: { image: 'tent_shadow.png', frame: [TENT_SHADOW_W, TENT_SHADOW_H], anchor: TENT_SHADOW_ANCHOR },
+    image: 'campfire.png', frame: [CAMPFIRE_W, CAMPFIRE_H], anchor: CAMPFIRE_ANCHOR,
+    decal: { image: 'campfire_decal.png', frame: [CAMPFIRE_DECAL_W, CAMPFIRE_DECAL_H], anchor: CAMPFIRE_DECAL_ANCHOR },
+    // It burns in the middle, among the logs (meters, model space), and smokes over them
+    fires: [[0, 0, 0.15], [0.08, 0.06, 0.12], [-0.07, -0.06, 0.12]],
+    smoke: [[0, 0, 0.55]],
+  };
+}
+
+// ---------- By the campfire: an automatic turret, a machine gun on a tripod, turning to its target ----------
+
+const TURRET_W = 110, TURRET_H = 120, TURRET_ANCHOR = [55, 84];
+const TURRET_SCALE = 0.975; // drawn this much bigger than its model: a heavy gun, as big as it should look by him
+const TURRET_SHADOW_W = 140, TURRET_SHADOW_H = 100, TURRET_SHADOW_ANCHOR = [70, 55];
+const TURRET_RAMPS = [
+  ramp('#101113', '#1b1d21', '#272a2f', '#34383e', '#43474e', '#555a61', '#6b7077', '#868b91'), // gunmetal: the gun, the belt
+  ramp('#151a0b', '#222a12', '#30391a', '#3f4b23', '#50602d', '#647638', '#7d8f4a', '#a0ad70'), // armour: pale olive
+  ramp('#0e110a', '#161b0f', '#1f2614', '#29321a', '#333f20', '#3e4c27', '#4a592f', '#566737'), // the base: dark olive
+  ramp('#050505', '#0a0a0a', '#101010', '#161616', '#1d1d1d', '#252525', '#2d2d2d', '#363636'), // black: the muzzle, the visor, the camera
+  ramp('#06121a', '#0b1f2b', '#11303f', '#184254', '#21576b', '#2e6f85', '#4a8ea3', '#7fb8c9'), // the camera's lens: glass
+  ramp('#2a0302', '#4a0604', '#6e0a06', '#930f08', '#b8160b', '#d8220f', '#f03a1a', '#ff6a40'), // its light, red
+];
+const [T_METAL, T_ARMOUR, T_BASE, T_BLACK, T_GLASS, T_LIGHT] = [0, 1, 2, 3, 4, 5];
+
+// Model space, meters, its pivot over the origin: a round column on a round foot plate (fixed),
+// and on it the head, turned a (radians, from +x, as the game's world turns: x right, y down the
+// screen): a squared-off armoured housing, a flat plate on top, a dark visor slit across its front;
+// a camera on top looking where the gun does (a glass lens, a red light); a short heavy gun out of the
+// middle of its front; a box on its right shoulder
+function turretModel(a) {
+  const parts = TURRET_RAMPS.map(() => []);
+  const flat = (t) => [[Math.cos(t), Math.sin(t), 0], [-Math.sin(t), Math.cos(t), 0], [0, 0, 1]];
+  const at = (fwd, side, z) => [Math.cos(a) * fwd - Math.sin(a) * side, Math.sin(a) * fwd + Math.cos(a) * side, z]; // (on the head: forward, to its left, up)
+  parts[T_METAL].push(ellipsoid([0, 0, 0.02], [0.26, 0.26, 0.03])); // the foot plate, round
+  parts[T_BASE].push(capsule([0, 0, 0.05], [0, 0, 0.55], 0.1)); // the column, round
+  parts[T_METAL].push(ellipsoid([0, 0, 0.6], [0.15, 0.15, 0.03])); // the ring it turns on
+  parts[T_ARMOUR].push(box(at(-0.02, 0, 0.78), flat(a), [0.22, 0.19, 0.16], 0.02)); // the housing...
+  parts[T_ARMOUR].push(box(at(-0.05, 0, 0.96), flat(a), [0.16, 0.14, 0.02], 0.01)); // ...its top plate
+  parts[T_BLACK].push(box(at(0.2, -0.03, 0.84), flat(a), [0.03, 0.1, 0.03], 0.005)); // the visor, across its front
+  parts[T_ARMOUR].push(box(at(-0.03, -0.24, 0.76), flat(a), [0.1, 0.055, 0.1], 0.012)); // the shoulder box
+  parts[T_BLACK].push(box(at(0.02, -0.05, 1.03), flat(a), [0.075, 0.05, 0.045], 0.01)); // the camera...
+  parts[T_GLASS].push(capsule(at(0.085, -0.05, 1.03), at(0.12, -0.05, 1.03), 0.033)); // ...its lens...
+  parts[T_LIGHT].push(ellipsoid(at(-0.03, -0.05, 1.08), [0.015, 0.015, 0.013])); // ...its light
+  parts[T_METAL].push(box(at(0.24, 0, 0.72), flat(a), [0.1, 0.055, 0.055], 0.015)); // the gun, out of its front in the middle: its body...
+  parts[T_METAL].push(capsule(at(0.32, 0, 0.72), at(0.46, 0, 0.72), 0.022)); // ...a short, thin barrel...
+  parts[T_BLACK].push(capsule(at(0.46, 0, 0.72), at(0.51, 0, 0.72), 0.016)); // ...muzzle
+  const fields = parts.map((prims) => bodySdf([{ k: 0.008, prims }], 0.003));
+  const K = TURRET_SCALE, sdf = (x, y, z) => Math.max(Math.min(...fields.map((f) => f(x / K, y / K, z / K))), -z / K) * K; // (scaled up)
+  return {
+    sdf, shape: sdf,
+    material: (x, y, z) => {
+      let best = 0, d = 1e9;
+      fields.forEach((f, i) => { if (f(x / K, y / K, z / K) < d) { d = f(x / K, y / K, z / K); best = i; } });
+      return best;
+    },
+  };
+}
+
+function makeTurret() {
+  const sh = new Sheet(TURRET_W * TURRET_FRAMES, TURRET_H);
+  for (let i = 0; i < TURRET_FRAMES; i++) { // a frame for each way the gun points, round from +x
+    const { sdf, material } = turretModel((i / TURRET_FRAMES) * Math.PI * 2);
+    const img = renderBody(sdf, {
+      W: TURRET_W, H: TURRET_H, anchor: TURRET_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+      camDist: 5.5, focusZ: 0.7, ramps: TURRET_RAMPS, material, outline: [8, 7, 6], bound: [0.7, 1.4],
+    });
+    sh.blit(img, TURRET_W, TURRET_H, i * TURRET_W, 0);
+  }
+  save(sh, 'turret.png');
+  const shadow = renderShadow(turretModel(0).shape, {
+    W: TURRET_SHADOW_W, H: TURRET_SHADOW_H, anchor: TURRET_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+    camDist: 5.5, focusZ: 0.6, light: SHADOW_LIGHT, alpha: 0.5,
+  });
+  const ss = new Sheet(TURRET_SHADOW_W, TURRET_SHADOW_H);
+  ss.blit(shadow, TURRET_SHADOW_W, TURRET_SHADOW_H, 0, 0);
+  save(ss, 'turret_shadow.png');
+  return {
+    image: 'turret.png', frame: [TURRET_W, TURRET_H], anchor: TURRET_ANCHOR, frames: TURRET_FRAMES,
+    shadow: { image: 'turret_shadow.png', frame: [TURRET_SHADOW_W, TURRET_SHADOW_H], anchor: TURRET_SHADOW_ANCHOR },
+  };
+}
+
+// ---------- Over the safe space: a garage, the Soviet kind: a box of sandstone blocks, a slate roof, steel gates ----------
+
+const GARAGE_W = 280, GARAGE_H = 330, GARAGE_ANCHOR = [140, 165];
+const GARAGE_SHADOW_W = 260, GARAGE_SHADOW_H = 300, GARAGE_SHADOW_ANCHOR = [130, 150];
+const GARAGE_RAMPS = [
+  ramp('#2a2014', '#3e301e', '#544229', '#6b5535', '#836942', '#9b7e51', '#b39462', '#c9aa76'), // blocks: sandstone
+  ramp('#1a140d', '#271e14', '#35291c', '#443525', '#53412e', '#634e38', '#735b42', '#83684d'), // the joints between them, darker
+  ramp('#1a1b1b', '#292a2a', '#3a3b3b', '#4c4d4c', '#5f605e', '#737371', '#878784', '#9c9b97'), // the roof: asbestos slate, grey
+  ramp('#0a120d', '#122017', '#1a2e21', '#223d2b', '#2b4c36', '#355c41', '#406c4d', '#4c7c5a'), // the gates: faded green paint
+  ramp('#1a0d06', '#2c160a', '#40200e', '#552b13', '#6b3718', '#82441e', '#995226', '#b0612f'), // rust
+  ramp('#08080a', '#0f0f12', '#17171b', '#202025', '#2b2a2f', '#37353a', '#444146', '#524e52'), // black: rubber, the lock
+  ramp('#1d2024', '#2e3237', '#454a50', '#5f656b', '#7c8288', '#9aa0a5', '#b9bdc1', '#d6d9db'), // steel: the barrel, hinges
+  ramp('#14140f', '#1f1f17', '#2b2a20', '#37362a', '#444234', '#524f3e', '#605c48', '#6e6953'), // the slate's stains: grime, lichen
+  ramp('#2a2a2c', '#404043', '#58585c', '#717176', '#8b8b90', '#a6a6aa', '#c1c1c4', '#dcdcde'), // the satellite dish: white, gone grey
+];
+const [G_BRICK, G_MORTAR, G_ROOF, G_GATE, G_RUST, G_BLACK, G_STEEL, G_PATCH, G_DISH] = [0, 1, 2, 3, 4, 5, 6, 7, 8]; // (G_PATCH: the slate's stains)
+
+// Model space, meters, its middle at the origin: a garage of big sandstone blocks, longer than it's wide (its depth
+// along y), its gates in the +y end (the camera's); its walls up past the roof in a low parapet; the
+// roof sheets of corrugated asbestos slate, grimy, a few blocks lying on them to hold them down, a
+// satellite dish up on a post, a rusty vent pipe up through them; two steel gate leaves, painted green long ago, rusting at
+// their feet and seams, a wicket door in the left one; the right one torn off, leant against the side
+// wall, the dark inside showing through where it was
+function garageModel() {
+  const [A, B, H] = GARAGE_SIZE;
+  const ax = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const parts = GARAGE_RAMPS.map(() => []);
+  parts[G_BRICK].push(box([0, 0, H / 2], ax, [A, B, H / 2], 0.01)); // the walls...
+  for (const [x, y, a, b] of [[0, B - 0.06, A, 0.06], [0, -B + 0.06, A, 0.06], [A - 0.06, 0, 0.06, B], [-A + 0.06, 0, 0.06, B]])
+    parts[G_BRICK].push(box([x, y, H + 0.12], ax, [a, b, 0.12], 0.008)); // ...up past the roof in a low parapet round it
+  // On the roof: a satellite dish on a post, a few blocks along its edges, a rusty vent pipe
+  const TOP = H + 0.11;
+  const DISH = [-0.6, -0.9, TOP + 0.75], FACE = [0.25, 0.65, 0.72].map((v, _, w) => v / Math.hypot(...w)); // (where it is; which way it looks: south and up)
+  parts[G_STEEL].push(capsule([DISH[0] - FACE[0] * 0.1, DISH[1] - FACE[1] * 0.1, TOP], DISH.map((v, k) => v - FACE[k] * 0.1), 0.035)); // its post
+  parts[G_STEEL].push(capsule(DISH.map((v, k) => v - FACE[k] * 0.3 + (k === 2 ? -0.28 : 0)), DISH.map((v, k) => v + FACE[k] * 0.38), 0.015)); // the arm out in front of it...
+  parts[G_BLACK].push(box(DISH.map((v, k) => v + FACE[k] * 0.4), ax, [0.04, 0.04, 0.04], 0.012)); // ...the head on it
+  for (const [x, y, a] of [[-1.35, -2.2, 0.2], [1.3, -0.4, -0.3], [-1.3, 1.6, 0.1], [0.2, -2.55, 1.4]])
+    parts[G_BRICK].push(box([x, y, TOP + 0.06], [[Math.cos(a), Math.sin(a), 0], [-Math.sin(a), Math.cos(a), 0], [0, 0, 1]], [0.2, 0.1, 0.06], 0.01));
+  parts[G_RUST].push(capsule([0.95, -1.9, TOP - 0.05], [0.95, -1.9, TOP + 0.55], 0.07));
+  parts[G_STEEL].push(ellipsoid([0.95, -1.9, TOP + 0.6], [0.13, 0.13, 0.04])); // (its cap)
+  parts[G_GATE].push(box([-0.66, B + 0.02, 1.5], ax, [0.64, 0.04, 1.5], 0.005)); // the gate leaves: the left one shut...
+  // ...the right one torn off its hinges, leant against the side wall by the doorway (LEAF: where its
+  // middle is, how far its top leans in to the wall)
+  const LEAN = 0.42, LEAF = [...GARAGE_LEAF, 1.38], up = [-Math.sin(LEAN), 0, Math.cos(LEAN)], out = [Math.cos(LEAN), 0, Math.sin(LEAN)];
+  parts[G_GATE].push(box(LEAF, [[0, 1, 0], out, up], [0.64, 0.04, 1.5], 0.005));
+  for (const h of [-1.0, 1.0]) parts[G_STEEL].push(box(LEAF.map((v, k) => v + up[k] * h + out[k] * 0.04 + (k === 1 ? 0.6 : 0)), [[0, 1, 0], out, up], [0.06, 0.02, 0.07], 0.005)); // its hinges, torn
+  parts[G_BLACK].push(box([-0.04, B + 0.07, 1.5], ax, [0.03, 0.03, 0.06], 0.005)); // the padlock, hanging open on its hasp
+  for (const x of [-1.32, 1.32]) for (const z of [0.5, 1.5, 2.5]) parts[G_STEEL].push(box([x, B + 0.07, z], ax, [0.05, 0.03, 0.06], 0.005)); // hinges
+  const fields = parts.map((prims) => (prims.length ? bodySdf([{ k: 0.004, prims }], 0.003) : () => 1e9));
+  // The roof: sheets of corrugated slate, its waves running front to back, inside the parapet
+  const slate = (x, y, z) => Math.max(Math.abs(x) - (A - 0.1), Math.abs(y) - (B - 0.1), Math.abs(z - (H + 0.04)) - 0.04 - 0.025 * Math.sin((x / 0.18) * Math.PI * 2));
+  const dish = (x, y, z) => { // a round dish, thin, cupped a little
+    const p = [x - DISH[0], y - DISH[1], z - DISH[2]], along = p[0] * FACE[0] + p[1] * FACE[1] + p[2] * FACE[2];
+    const across = Math.hypot(p[0] - FACE[0] * along, p[1] - FACE[1] * along, p[2] - FACE[2] * along);
+    return Math.max(Math.abs(along + 0.12 * (across / 0.38) ** 2) - 0.018, across - 0.38);
+  };
+  fields[G_ROOF] = slate;
+  const walls = fields[G_BRICK], doorway = (x, y, z) => Math.max(Math.abs(x - 0.66) - 0.64, Math.abs(y - B) - 0.35, Math.abs(z - 1.5) - 1.5);
+  fields[G_BRICK] = (x, y, z) => Math.max(walls(x, y, z), -doorway(x, y, z)); // (the open half: its way in, dark inside)
+  const sdf = (x, y, z) => Math.max(Math.min(dish(x, y, z), ...fields.map((f) => f(x, y, z))), -z);
+  const frac = (v) => ((v % 1) + 1) % 1;
+  return {
+    sdf, shape: sdf,
+    material: (x, y, z) => {
+      let best = 0, d = 1e9;
+      fields.forEach((f, i) => { if (f(x, y, z) < d) { d = f(x, y, z); best = i; } });
+      if (dish(x, y, z) < d) return G_DISH;
+      if (best === G_ROOF) { // the slate sheets: their overlaps dark, grime and lichen in blotches
+        if (frac(y / 1.15) < 0.035 || frac((x + 0.05) / 1.15) < 0.02) return G_BLACK;
+        const n = hash(Math.floor(x / 0.25), Math.floor(y / 0.25)) + 0.5 * hash(Math.floor(x / 0.7) + 7, Math.floor(y / 0.7));
+        return n > 1.15 ? G_PATCH : G_ROOF;
+      }
+      if (best === G_BRICK && doorway(x, y, z) < 0.02) return G_BLACK; // (in through the open leaf: the dark inside)
+      if (best === G_BRICK && z > H + 0.1 && Math.abs(x) < A - 0.13 && Math.abs(y) < B - 0.13) return G_BRICK; // (the blocks lying on the roof: plain)
+      if (best === G_BRICK) { // courses of big sandstone blocks, every other one shifted half a block, joints between
+        const along = Math.abs(Math.abs(x) - A) < Math.abs(Math.abs(y) - B) ? y : x; // (along whichever wall it's on)
+        if (z > H + 0.18) { // the parapet's top: blocks laid across it
+          const u = frac((Math.abs(x) - A < -0.1 ? x : y) / 0.4);
+          return u < 0.06 ? G_MORTAR : G_BRICK;
+        }
+        const row = Math.floor(z / 0.2), u = frac((along + (row % 2) * 0.2) / 0.4), v = frac(z / 0.2); // (big blocks: 0.4 by 0.2 m)
+        return u < 0.04 || v < 0.07 ? G_MORTAR : G_BRICK;
+      }
+      if (best === G_GATE && x > A) { // the torn-off leaf: its frame round it, stiffening ribs across, rust in specks
+        const w = y - LEAF[1], h = (x - LEAF[0]) * up[0] + (z - LEAF[2]) * up[2];
+        if (Math.abs(w) > 0.57 || Math.abs(h) > 1.43 || Math.abs(Math.abs(h) - 0.5) < 0.03) return G_BLACK;
+        return hash(Math.floor(w * 18), Math.floor(h * 18)) > 0.83 || h < -1.25 ? G_RUST : G_GATE;
+      }
+      if (best === G_GATE) { // rust at its feet and in patches; the wicket's outline in the left leaf
+        const n = hash(Math.floor(x * 9), Math.floor(z * 9));
+        if (z < 0.18 + 0.12 * n || (n > 0.86 && z < 2.4)) return G_RUST;
+        if (x < -0.15 && x > -1.1 && z < 2.1 && (Math.abs(x + 0.2) < 0.02 || Math.abs(x + 1.05) < 0.02 || Math.abs(z - 2.08) < 0.02)) return G_BLACK;
+        return G_GATE;
+      }
+      return best;
+    },
+  };
+}
+
+function makeGarage() {
+  const { sdf, material, shape } = garageModel();
+  const view = { pxPerM: PX_PER_M, elev: ELEV, yaw: GARAGE.yaw, camDist: 40, focusZ: 0.9 };
+  const img = renderBody(sdf, { W: GARAGE_W, H: GARAGE_H, anchor: GARAGE_ANCHOR, ...view, ramps: GARAGE_RAMPS, material, outline: [6, 7, 6], bound: [1.4, 5.8] });
+  const sh = new Sheet(GARAGE_W, GARAGE_H);
+  sh.blit(img, GARAGE_W, GARAGE_H, 0, 0);
+  save(sh, 'garage.png');
+  const shadow = renderShadow(shape, { W: GARAGE_SHADOW_W, H: GARAGE_SHADOW_H, anchor: GARAGE_SHADOW_ANCHOR, ...view, light: SHADOW_LIGHT, alpha: 0.55, reach: 6 });
+  const ss = new Sheet(GARAGE_SHADOW_W, GARAGE_SHADOW_H);
+  ss.blit(shadow, GARAGE_SHADOW_W, GARAGE_SHADOW_H, 0, 0);
+  save(ss, 'garage_shadow.png');
+  return {
+    image: 'garage.png', frame: [GARAGE_W, GARAGE_H], anchor: GARAGE_ANCHOR,
+    smoke: [[0.95, -1.9, GARAGE_SIZE[2] + 0.75]], // (out of its vent pipe, meters, model space)
+    shadow: { image: 'garage_shadow.png', frame: [GARAGE_SHADOW_W, GARAGE_SHADOW_H], anchor: GARAGE_SHADOW_ANCHOR },
+  };
+}
+
+// ---------- The fellow: an old scientist, stooped, in a long white lab coat, by the garage ----------
+
+const FELLOW_W = 96, FELLOW_H = 120, FELLOW_ANCHOR = [48, 94], FELLOW_FRAMES = 4; // (frames: his breathing, in and out)
+const FELLOW_SCALE = 1.3; // drawn this much bigger than his model: as the hero is, a little shorter than him
+const FELLOW_SHADOW_W = 120, FELLOW_SHADOW_H = 90, FELLOW_SHADOW_ANCHOR = [60, 50];
+const FELLOW_RAMPS = [
+  ramp('#1a0e0b', '#341c15', '#53301f', '#73452e', '#935e41', '#b27a57', '#cc9873', '#e4b894'), // skin
+  ramp('#26272a', '#3a3b3f', '#505156', '#68696e', '#818287', '#9b9ca0', '#b8b8bb', '#d6d6d6'), // the lab coat: white, gone grey
+  ramp('#0d1219', '#152030', '#1e2e44', '#283d59', '#344e6e', '#426084', '#53739a', '#6688b0'), // his shirt: blue
+  ramp('#110e0b', '#1d1813', '#2a231b', '#383023', '#463c2c', '#554936', '#645640', '#73634b'), // trousers: brown
+  ramp('#060608', '#0c0c10', '#131318', '#1b1b22', '#25252e', '#30303b', '#3d3d4a', '#4c4c5c'), // shoes, the glasses' frames
+  ramp('#3a3a3c', '#505052', '#68686a', '#808082', '#99999b', '#b3b3b4', '#cdcdce', '#e8e8e8'), // his hair, his beard: white
+  ramp('#1c2a33', '#2a3e4b', '#3a5464', '#4c6b7e', '#628498', '#7c9eb1', '#9cbac9', '#c2d6e0'), // the glasses' lenses
+];
+const [F_SKIN, F_COAT, F_SHIRT, F_TROUSERS, F_BLACK, F_HAIR, F_GLASS] = [0, 1, 2, 3, 4, 5, 6];
+
+// Model space, meters, his feet over the origin, facing +y (the camera): a stout old man, stooped,
+// his head craned forward; a white lab coat to his knees over a blue shirt, his trousers and shoes
+// under it (his feet together); bald on top, wild white hair round the sides and back, a white beard and moustache, round
+// glasses; his hands clasped behind his back. b (0..1): how far through a breath (the
+// chest, the shoulders and the head up a little)
+function fellowModel(b = 0) {
+  const parts = FELLOW_RAMPS.map(() => []);
+  const up = 0.012 * b, E = (c, r) => ellipsoid(c, r), C = (a, c, r0, r1 = r0) => capsule(a, c, r0, r1);
+  for (const sx of [-1, 1]) {
+    parts[F_BLACK].push(C([sx * 0.05, -0.03, 0.04], [sx * 0.065, 0.11, 0.035], 0.042, 0.035)); // shoes, together
+    parts[F_TROUSERS].push(C([sx * 0.05, 0, 0.07], [sx * 0.06, 0.01, 0.5], 0.05, 0.056)); // legs, standing close together
+  }
+  // The coat: flaring a little to its hem, the chest stooped forward
+  parts[F_COAT].push(E([0, 0, 0.72], [0.23, 0.18, 0.27]), E([0, 0.02, 1.0], [0.24, 0.19, 0.21]), E([0, 0.04, 1.2 + up], [0.22, 0.15, 0.15]));
+  parts[F_COAT].push(E([0, 0.09, 0.95 + up * 0.5], [0.2, 0.15, 0.17])); // his belly, round under the coat (a stout old man)
+  parts[F_COAT].push(E([0, 0.05, 1.32 + up], [0.23, 0.11, 0.07])); // its shoulders
+  parts[F_SHIRT].push(E([0, 0.17, 1.22 + up], [0.05, 0.03, 0.1])); // the shirt, in its open front
+  for (const sx of [-1, 1]) { // the arms in their sleeves, behind his back, the hands clasped there
+    const sh = [sx * 0.23, 0.03, 1.31 + up], el = [sx * 0.25, -0.1, 1.07 + up * 0.5], wr = [sx * 0.07, -0.21, 0.93];
+    parts[F_COAT].push(C(sh, el, 0.05, 0.046), C(el, wr, 0.046, 0.04));
+  }
+  parts[F_SKIN].push(E([0, -0.225, 0.92], [0.055, 0.035, 0.04])); // the hands, clasped
+  // The neck and the head, craned forward
+  parts[F_SKIN].push(C([0, 0.05, 1.35 + up], [0, 0.1, 1.44 + up], 0.042, 0.038));
+  const H = [0, 0.12, 1.53 + up]; // (the head's middle)
+  const at = (x, y, z) => [H[0] + x, H[1] + y, H[2] + z];
+  parts[F_SKIN].push(E(at(0, 0, 0), [0.074, 0.083, 0.094])); // the skull, bald on top
+  parts[F_SKIN].push(C(at(0, 0.08, 0.0), at(0, 0.095, -0.03), 0.014, 0.018)); // the nose
+  for (const sx of [-1, 1]) parts[F_SKIN].push(E(at(sx * 0.074, 0, -0.005), [0.012, 0.02, 0.026])); // the ears
+  for (const [x, y, z, r] of [[-0.075, -0.02, 0.02, 0.05], [0.075, -0.02, 0.02, 0.05], [-0.06, -0.06, 0.04, 0.045], [0.06, -0.06, 0.04, 0.045], [0, -0.075, 0.02, 0.055], [-0.085, 0.01, 0.06, 0.03], [0.085, 0.01, 0.06, 0.03]])
+    parts[F_HAIR].push(E(at(x, y, z), [r, r * 0.9, r * 0.85])); // his hair: bald on top, white and wild round the sides and back
+  parts[F_HAIR].push(E(at(0, 0.06, -0.085), [0.052, 0.042, 0.055]), E(at(0, 0.085, -0.035), [0.04, 0.016, 0.013])); // the beard, the moustache
+  for (const sx of [-1, 1]) parts[F_GLASS].push(E(at(sx * 0.03, 0.082, 0.01), [0.022, 0.006, 0.019])); // the glasses' lenses...
+  parts[F_BLACK].push(C(at(-0.01, 0.086, 0.012), at(0.01, 0.086, 0.012), 0.004)); // ...the bridge between them
+  const fields = parts.map((prims) => (prims.length ? bodySdf([{ k: 0.012, prims }], 0.004) : () => 1e9));
+  const K = FELLOW_SCALE, sdf = (x, y, z) => Math.max(Math.min(...fields.map((f) => f(x / K, y / K, z / K))), -z / K) * K; // (scaled up)
+  return {
+    sdf, shape: sdf,
+    material: (x, y, z) => {
+      let best = 0, d = 1e9;
+      fields.forEach((f, i) => { if (f(x / K, y / K, z / K) < d) { d = f(x / K, y / K, z / K); best = i; } });
+      return best;
+    },
+  };
+}
+
+function makeFellow() {
+  const sh = new Sheet(FELLOW_W * FELLOW_FRAMES, FELLOW_H);
+  for (let i = 0; i < FELLOW_FRAMES; i++) {
+    const { sdf, material } = fellowModel((1 - Math.cos((i / FELLOW_FRAMES) * Math.PI * 2)) / 2);
+    const img = renderBody(sdf, {
+      W: FELLOW_W, H: FELLOW_H, anchor: FELLOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+      camDist: 5.5, focusZ: 1.1, ramps: FELLOW_RAMPS, material, outline: [8, 7, 6], bound: [1.1, 1.35],
+    });
+    sh.blit(img, FELLOW_W, FELLOW_H, i * FELLOW_W, 0);
+  }
+  save(sh, 'fellow.png');
+  const shadow = renderShadow(fellowModel(0).shape, {
+    W: FELLOW_SHADOW_W, H: FELLOW_SHADOW_H, anchor: FELLOW_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+    camDist: 5.5, focusZ: 1.1, light: SHADOW_LIGHT, alpha: 0.55,
+  });
+  const ss = new Sheet(FELLOW_SHADOW_W, FELLOW_SHADOW_H);
+  ss.blit(shadow, FELLOW_SHADOW_W, FELLOW_SHADOW_H, 0, 0);
+  save(ss, 'fellow_shadow.png');
+  return {
+    image: 'fellow.png', frame: [FELLOW_W, FELLOW_H], anchor: FELLOW_ANCHOR, frames: FELLOW_FRAMES,
+    shadow: { image: 'fellow_shadow.png', frame: [FELLOW_SHADOW_W, FELLOW_SHADOW_H], anchor: FELLOW_SHADOW_ANCHOR },
   };
 }
 
@@ -1414,7 +1699,7 @@ function makeBag(name = 'bag') {
 const BUG_SCALE = 0.65; // the model's drawn at this size: a small, quick thing, knee-high to him
 const BUG = 72, BUG_ANCHOR = [36, 48];
 const BUG_SHADOW_W = 96, BUG_SHADOW_H = 72, BUG_SHADOW_ANCHOR = [48, 40];
-const BUG_WALK = 8, BUG_IDLE = 4; // frames
+const BUG_WALK = 8, BUG_IDLE = 4, BUG_BITE_FRAMES = 8; // frames
 export const BUG_WALK_CYCLE = 0.4; // seconds a wave of its legs takes, head to tail
 const BUG_RAMPS = [
   ramp('#0f0905', '#1a1009', '#26180d', '#332012', '#412917', '#50331d', '#5f3d23', '#6f482a'), // its hide, dark brown
@@ -1427,22 +1712,38 @@ const [BUG_HIDE, BUG_RUST, BUG_BLACK, BUG_DARK] = [0, 1, 2, 3];
 const BUG_SEGMENTS = [[0.5, 0.13, 0.09, 0.1], [0.36, 0.2, 0.1, 0.15], [0.19, 0.26, 0.11, 0.2], [0.0, 0.3, 0.12, 0.23], [-0.2, 0.31, 0.12, 0.24],
   [-0.4, 0.28, 0.11, 0.21], [-0.57, 0.22, 0.1, 0.17], [-0.71, 0.14, 0.08, 0.11]];
 
-// phase: the crawl's (radians, 0 still); twitch: its jaws stirring (0..1)
-function bugModel(phase = 0, twitch = 0) {
+// A bite (0..1 through it, or null): how far its front is reared up and back (rear), thrown forward
+// and down at him (lunge), and its jaws open (gape): up and back, jaws wide, then a snap forward
+// at BUG_BITE_SNAP, jaws shut, and back down
+function bugBite(t) {
+  const up = smoothstep(0, BUG_BITE_SNAP - 0.1, t) * (1 - smoothstep(BUG_BITE_SNAP - 0.1, BUG_BITE_SNAP, t));
+  const lunge = smoothstep(BUG_BITE_SNAP - 0.12, BUG_BITE_SNAP, t) * (1 - smoothstep(BUG_BITE_SNAP + 0.1, 1, t));
+  const gape = smoothstep(0, BUG_BITE_SNAP - 0.15, t) * (1 - smoothstep(BUG_BITE_SNAP - 0.04, BUG_BITE_SNAP, t));
+  return { rear: up, lunge, gape };
+}
+
+// phase: the crawl's (radians, 0 still); twitch: its jaws stirring (0..1); bite: bugBite's, or null
+function bugModel(phase = 0, twitch = 0, bite = null) {
   const parts = BUG_RAMPS.map(() => []);
-  BUG_SEGMENTS.forEach(([y, rx, ry, rz], k) => {
+  const { rear = 0, lunge = 0, gape = 0 } = bite ?? {};
+  BUG_SEGMENTS.forEach(([y0, rx, ry, rz], k) => {
     // It sways a little side to side and humps along as it crawls, the wave going head to tail
     const sway = phase ? 0.03 * Math.sin(phase - k * 0.8) : 0, hump = phase ? 0.015 * Math.max(0, Math.sin(phase - k * 0.8)) : 0;
-    const z = rz + 0.03 + hump;
+    // Biting, its front (the head most, fading out down the first few segments) goes up and back,
+    // then forward and down
+    const w = Math.max(0, 1 - k / 5), by = w * (0.3 * lunge - 0.12 * rear) + 0.05 * lunge, bz = w * (0.34 * rear - 0.04 * lunge);
+    const y = y0 + by, z = rz + 0.03 + hump + bz;
     parts[k === 0 ? BUG_BLACK : BUG_HIDE].push(ellipsoid([sway, y, z], [rx, ry * 1.25, rz]));
-    if (k === 0) { // the head: short jaws
-      for (const sx of [-1, 1]) parts[BUG_DARK].push(capsule([sx * 0.05, y + 0.07, z - 0.04], [sx * (0.02 + 0.03 * twitch), y + 0.15, z - 0.06], 0.016));
+    if (k === 0) { // the head: short jaws (wide and reaching out as it bites, its red-brown mouth showing between them)
+      for (const sx of [-1, 1]) parts[BUG_DARK].push(capsule([sx * 0.05, y + 0.07, z - 0.04], [sx * (0.02 + 0.03 * twitch + 0.15 * gape), y + 0.15 + 0.1 * gape, z - 0.06], 0.016 + 0.01 * gape));
+      if (gape > 0.05) parts[BUG_RUST].push(ellipsoid([0, y + 0.08, z - 0.02], [0.07 * gape, 0.05 * gape, 0.06 * gape]));
       return;
     }
-    // Two pairs of tiny legs on it, one each side front and back, stepping in a wave
+    // Two pairs of tiny legs on it, one each side front and back, stepping in a wave (reared up,
+    // the front ones up off the ground, clawing in the air)
     for (const sx of [-1, 1]) for (const [dy, off] of [[ry * 0.5, 0], [-ry * 0.5, Math.PI]]) {
       const a = phase - k * 0.8 + off + (sx > 0 ? 0 : Math.PI / 2), swing = phase ? 0.035 * Math.sin(a) : 0, lift = phase ? 0.02 * Math.max(0, Math.cos(a)) : 0;
-      parts[BUG_DARK].push(capsule([sx * (rx - 0.04) + sway, y + dy, 0.08], [sx * (rx + 0.09) + sway, y + dy + swing, lift], 0.016));
+      parts[BUG_DARK].push(capsule([sx * (rx - 0.04) + sway, y + dy, 0.08 + bz], [sx * (rx + 0.09) + sway, y + dy + swing + 0.04 * w * rear, lift + 0.7 * bz], 0.016));
     }
   });
   const fields = parts.map((prims) => (prims.length ? bodySdf([{ k: 0.02, prims }], 0.01) : () => 1e9));
@@ -1468,6 +1769,7 @@ function makeBug() {
   const anims = [ // [name, frames, fps, (frame) => model]
     ['idle', BUG_IDLE, 6, (i) => bugModel(0, (1 - Math.cos(cycle(i, BUG_IDLE))) / 2)],
     ['walk', BUG_WALK, BUG_WALK / BUG_WALK_CYCLE, (i) => bugModel(cycle(i, BUG_WALK) || 1e-6)],
+    ['bite', BUG_BITE_FRAMES, BUG_BITE_FRAMES / BUG_BITE_TIME, (i) => bugModel(0, 0, bugBite((i + 0.5) / BUG_BITE_FRAMES))], // (played once)
   ];
   const cols = anims.reduce((n, a) => n + a[1], 0);
   const color = new Sheet(cols * BUG, DIRS.length * BUG), shadows = new Sheet(cols * BUG_SHADOW_W, DIRS.length * BUG_SHADOW_H);
@@ -1739,6 +2041,14 @@ function makeBedding() {
   };
 }
 
+// A worker: draws its share of a hero's frames, handing each back as it's done
+if (!isMainThread) {
+  const anims = heroAnims(workerData.packed);
+  for (const job of workerData.jobs) {
+    const { img, shadow, muzzle } = heroFrame(anims, job.a, job.i, job.row);
+    parentPort.postMessage({ ...job, img, shadow, muzzle }, [img.buffer, shadow.buffer]);
+  }
+} else {
 // ONLY=hero,hero_pack,pod,backpack,bed,stand,bedding regenerates just those parts and keeps the rest of the existing art
 const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
 const want = (name) => !only || only.includes(name);
@@ -1746,23 +2056,26 @@ fs.mkdirSync(OUT, { recursive: true });
 const manifestPath = path.join(OUT, 'sprites.json');
 if (!only) for (const f of fs.readdirSync(OUT)) if (f.endsWith('.png')) fs.unlinkSync(path.join(OUT, f)); // drop old art
 // Makes a part if it's wanted (false if not), saying when it's done (the heroes their progress too)
-function part(name, make) {
+async function part(name, make) {
   if (!want(name)) return false;
   const start = Date.now();
-  const made = make();
+  const made = await make();
   console.log(`${name}: done in ${((Date.now() - start) / 1000).toFixed(1)}s`);
   return made;
 }
 const characters = {
-  hero: part('hero', () => makeHero('hero')),
-  hero_pack: part('hero_pack', () => makeHero('hero_pack', true)), // after finding the backpack
-  bug: part('bug', makeBug), // the creatures that come for him
+  hero: await part('hero', () => makeHero('hero')),
+  hero_pack: await part('hero_pack', () => makeHero('hero_pack', true)), // after finding the backpack
+  bug: await part('bug', makeBug), // the creatures that come for him
 };
 const objects = {
-  pod: part('pod', makePod), backpack: part('backpack', makeBackpack), bed: part('bed', makeBed),
-  stand: part('stand', makeStand), bedding: part('bedding', makeBedding), bag: part('bag', () => makeBag()), bag_stand: part('bag_stand', () => makeBag('bag_stand')), bottles: part('bottles', makeBottles),
-  tent: part('tent', makeTent),
-  rocket: part('rocket', makeRocket), crater: part('crater', makeCrater), crater_small: part('crater_small', makeSmallCrater),
+  pod: await part('pod', makePod), backpack: await part('backpack', makeBackpack), bed: await part('bed', makeBed),
+  stand: await part('stand', makeStand), bedding: await part('bedding', makeBedding), bag: await part('bag', () => makeBag()), bag_stand: await part('bag_stand', () => makeBag('bag_stand')), bottles: await part('bottles', makeBottles),
+  campfire: await part('campfire', makeCampfire), // the safe space's
+  turret: await part('turret', makeTurret), // by its campfire
+  garage: await part('garage', makeGarage), // over them
+  fellow: await part('fellow', makeFellow), // by it
+  rocket: await part('rocket', makeRocket), crater: await part('crater', makeCrater), crater_small: await part('crater_small', makeSmallCrater),
 };
 // The rest comes from the existing manifest, read only now: runs for other parts (ONLY=hero and
 // ONLY=hero_pack side by side) may have updated it in the meantime
@@ -1772,3 +2085,4 @@ const keep = (made, prev = {}) => ({ ...prev, ...Object.fromEntries(Object.entri
 const manifest = { scale: 2, view: 'topdown', characters: keep(characters, old.characters), objects: keep(objects, old.objects) };
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 console.log('Art written to', OUT);
+}

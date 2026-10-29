@@ -37,8 +37,8 @@ function spinAround() {
   };
 }
 
-// box: the panel element
-export function createQuests(box) {
+// box: the panel element; done(): called as each one's done
+export function createQuests(box, done = () => {}) {
   const quests = [
     {
       title: 'Look around',
@@ -47,26 +47,40 @@ export function createQuests(box) {
       steps: [{ text: 'Search for your <span class="goal">backpack</span>. Looks like they threw it out right after me...', update: ({ hasBackpack }) => hasBackpack }],
     },
     {
-      title: 'Target practice',
+      title: 'Check equipment',
       main: true,
+      // What it's about, under its title: shown in place of its steps (they're kept count of all the same;
+      // the talent's comes up as a note in the journal once there's one to pick: see client.js)
+      about: 'I need to make sure everything works. Shoot the <span class="goal">bottles</span>, hit the <span class="goal">punching bag</span>.',
       // one after the other, each step leading to its own thing (target); how far along each is shows
       // by the thing (see client.js)
       steps: [
         { text: 'Shoot the <span class="goal">bottles</span> off the crate (hold right click)', target: 'bottles', update: ({ bottlesBroken }) => bottlesBroken >= 4 },
         { text: 'Hit the <span class="goal">punching bag</span> with the knife (left click)', target: 'bag', update: ({ bagHits }) => bagHits >= BAG_HITS },
+        { text: 'Pick your first <span class="goal">talent</span> (press T)', update: ({ talentsTaken }) => talentsTaken > 0 },
       ],
     },
     {
-      title: 'Where am I?',
+      title: 'Safe space',
       main: true,
-      cue: 'map', // (while it's on, the game cues it: see client.js)
-      steps: [{ text: 'Open the <span class="goal">map</span> to get your bearings (press M)', update: ({ mapSeen }) => mapSeen }],
+      about: 'I need to <span class="goal">find a place</span> where I can catch my breath.',
+      cue: 'map', // (while it's on, the game cues the map once, as he steps out of the safe zones: see client.js)
+      target: 'campfire', // (the way there shown from the start: its campfire, named for it, gold over it till it's done)
+      steps: [{ text: 'Get to the safe space', update: ({ firesideUsed }) => firesideUsed }], // (on till he's used its campfire: E)
     },
     {
-      title: 'Keep looking',
+      title: 'Talk to the fellow',
       main: true,
-      target: 'structures', // (STRUCTURES in shared/world.js: only a point yet, it stays on)
-      steps: [{ text: 'I think I saw some structures to the <span class="goal">west</span> of here while I was falling...', update: () => false }],
+      target: 'fellow', // (out in front of the garage)
+      about: 'There’s a strange <span class="goal">old fellow</span> here. Hope I won’t have to torture him...',
+      steps: [{ text: 'Talk to the <span class="goal">fellow</span>', update: ({ fellowTalked }) => fellowTalked }], // (E by him)
+    },
+    {
+      title: 'Find something out',
+      main: true,
+      target: 'fellow',
+      about: 'Try to <span class="goal">find something out</span> from the old man.',
+      steps: [{ text: 'Find something out', update: () => false }], // (nothing to find out yet: it stays on)
     },
   ];
   let current = 0, html = '', last = {}; // last: the latest input
@@ -76,7 +90,7 @@ export function createQuests(box) {
     const finished = q.steps.every((s) => s.done);
     const next = finished && q.done
       ? `<div class="title">✓ ${q.done}</div>`
-      : `<div class="title">${q.title}</div>` + q.steps.map((s) =>
+      : `<div class="title">${q.title}</div>` + (q.about ? `<div class="about">${q.about}</div>` : '') + (q.about ? [] : q.steps).map((s) =>
         `<div class="step${s.done ? ' done' : ''}">${s.text}${s.extra && !s.done ? ' ' + s.extra() : ''}</div>`).join('');
     if (next === html) return; // the panel only changes when something does
     html = next;
@@ -106,24 +120,50 @@ export function createQuests(box) {
   }
 
   return {
+    // The quests so far, first to last, for the journal: [{ title, about, main, done, steps: [{ text, done }], notes }]
+    list: () => quests.slice(0, current + 1).map((q) => ({
+      title: q.title, about: q.about ?? '', main: !!q.main, done: q.steps.every((s) => s.done), steps: q.steps.map((s) => ({ text: s.text, done: !!s.done })),
+      notes: q.notes ?? [],
+    })),
+    // Where he's got to, to keep (see client.js: the checkpoint): the quest on, each so far's steps done
+    // and notes; load() puts it back
+    save: () => ({ current, quests: quests.slice(0, current + 1).map((q) => ({ done: q.steps.map((s) => !!s.done), notes: q.notes ?? [] })) }),
+    load(saved) {
+      current = Math.min(saved.current, quests.length - 1);
+      saved.quests.forEach((sq, i) => {
+        if (!quests[i]) return;
+        quests[i].steps.forEach((s, k) => { s.done = !!sq.done[k]; });
+        quests[i].notes = [...sq.notes];
+      });
+      render();
+    },
+    // Something that happened, noted down in the journal under the quest on now (as he'd write it)
+    note(text) {
+      (quests[current].notes ??= []).push(text);
+    },
     // The name of the object the current quest leads to (its first step not done's, or its own), or
     // null (none, or the quest is done)
     target() {
       const step = quests[current].steps.find((s) => !s.done);
       return step ? step.target ?? quests[current].target ?? null : null;
     },
+    // The name the current quest's target goes by on the map, if not its own (its mark), or null
+    mark: () => quests[current].mark ?? null,
+    // The current quest is the story's (gold)
+    main: () => !!quests[current].main,
     // The current quest's cue (what the game stops to make him do), while it isn't done, or null
     cue() {
       const q = quests[current];
       return q.steps.every((s) => s.done) ? null : q.cue ?? null;
     },
     // input: { dt, running (s), dx, dy (the run's direction), aim (angle to the cursor, or null),
-    // hasBackpack, bottlesBroken (bottles shot off the crate), bagHits (knife cuts in the punching bag), mapSeen (the map's open all the way) }
+    // hasBackpack, bottlesBroken (bottles shot off the crate), bagHits (knife cuts in the punching bag), talentsTaken (how many he has), firesideUsed (he's used the safe space's campfire: E), fellowTalked (he's spoken to the fellow: E) }
     update(input) {
       last = input;
       const q = quests[current];
       if (!q.steps.every((s) => s.done)) {
         for (const s of q.steps) if (!s.done && s.update(input)) s.done = true;
+        if (q.steps.every((s) => s.done)) done(q);
       }
       // Done: the next one comes at once (the last one stays up, done), the done one going
       if (q.steps.every((s) => s.done) && current < quests.length - 1) {

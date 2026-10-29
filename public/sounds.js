@@ -2,12 +2,14 @@
 // small gun's sounds close up: a sharp crack (the muzzle blast's front, clipped hard) with a snap on
 // top, the blast's body, a low push under it, the gun's steel ringing short, the bolt's clack a
 // moment after; short, nothing after it. A spent case pings as it's thrown out. Footsteps and rolls
-// on the sand. The knife swishes through the air, and thuds into what it cuts. A bottle shatters, its glass tinkling down. A bug squeals and pops, as a bubble does; it bites, snapping. A rocket screams down, and goes off: a boom, a rumble rolling away, earth falling back. The desert's wind, always there, low, in gusts. Fires crackle as he comes near them. Bugs in sight rustle and scrabble, their legs ticking on the sand. A dry click is the trigger pulled on nothing.
+// on the sand. The knife swishes through the air, and thuds into what it cuts. A bottle shatters, its glass tinkling down. A bug squeals and pops, as a bubble does; it bites, snapping. A rocket screams down, and goes off: a boom, a rumble rolling away, earth falling back. The desert's wind, always there, low, in gusts. Fires crackle as he comes near them. A new level: a choir sings out "aah"; a quest done, the same, much shorter and quieter. Bugs in sight rustle and scrabble, their legs ticking on the sand. A dry click is the trigger pulled on nothing. A reload: the magazine out, the new one in, the bolt.
 // All of it goes through a compressor, as recorded gunfire does. Each one a little different, so a
 // burst doesn't sound like one sample over and over. Browsers only let a page make sound once the
 // player has done something: wake() from a key or a click starts it.
 
 const VOLUME = 0.55;
+// A choir's vowels: their resonances (Hz, how sharp, how loud)
+const AAH = [[800, 6, 1], [1150, 8, 0.6], [2900, 10, 0.25]];
 const WIND = { gain: 0.003, gust: 0.0015 }; // how loud the desert's wind is: always, and how much more (or less) a gust makes it
 const GLASS = 2.2; // how loud a bottle shattering is (all of it)
 const BUGS = { rustle: 0.05, tick: 0.025 }; // how loud bugs right by him are: their rustle, a leg's tick
@@ -110,6 +112,58 @@ export function createSounds() {
     p.pan.value = pan;
     p.connect(clear ? clean : dry);
     return p;
+  }
+
+  // A choir singing in a hall (see levelUp), at seconds from now: chord (Hz) swelling up over up seconds, held
+  // hold, dying away gently over about down (as a held note fades); each part a few voices a touch out
+  // of tune with each other, each with its own slow vibrato, sung through the vowel's resonances; loud:
+  // each voice's; hall: how long the hall's tail (seconds); vowel: its resonances (AAH)
+  function choir({ up, hold, down, chord, loud, hall: tail, vowel: sound = AAH, at = 0 }) {
+    if (!ac || ac.state !== 'running') return;
+    const t = ac.currentTime + 0.005 + at, out = voice(0, true);
+    // The hall: the choir dry, and a long tail of it from the walls (noise dying away as the impulse)
+    const hall = ac.createConvolver(), wet = ac.createGain(), sung = ac.createGain();
+    const len = Math.round(ac.sampleRate * tail), ir = ac.createBuffer(2, len, ac.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = ir.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3;
+    }
+    hall.buffer = ir;
+    wet.gain.value = 0.5;
+    sung.connect(out);
+    sung.connect(hall).connect(wet).connect(out);
+    const vowel = sound.map(([f, q, g]) => {
+      const bp = ac.createBiquadFilter(), lv = ac.createGain();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = q;
+      lv.gain.value = g;
+      bp.connect(lv).connect(sung);
+      return bp;
+    });
+    const env = ac.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(1, t + up);
+    env.gain.setValueAtTime(1, t + up + hold);
+    env.gain.setTargetAtTime(0, t + up + hold, down / 3);
+    for (const bp of vowel) env.connect(bp);
+    const end = t + up + hold + down * 2.5; // (its tail, gone quiet)
+    for (const f of chord)
+      for (let v = 0; v < 3; v++) {
+        const osc = ac.createOscillator(), lv = ac.createGain(), wob = ac.createOscillator(), depth = ac.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.value = f;
+        osc.detune.value = (v - 1) * 9 + (Math.random() - 0.5) * 6; // (no two quite together)
+        wob.frequency.value = 4.5 + Math.random() * 1.5; // the vibrato
+        depth.gain.value = 12; // (cents)
+        wob.connect(depth).connect(osc.detune);
+        lv.gain.value = loud;
+        osc.connect(lv).connect(env);
+        for (const o of [osc, wob]) {
+          o.start(t);
+          o.stop(end);
+        }
+      }
   }
 
   return {
@@ -426,6 +480,17 @@ export function createSounds() {
       burst(out, t, { type: 'lowpass', from: 600 * p, gain: 0.12, time: 0.014, attack: 0.0005 }); // its body
     },
 
+    // The other way round from press(): the key let go as a hold fills up (a thing taken), its click
+    // turned over: the body first, a lower ring, the tick last and softer
+    done() {
+      if (!ac || ac.state !== 'running') return;
+      const t = ac.currentTime + 0.005, p = 0.97 + Math.random() * 0.06, out = voice(0, true);
+      burst(out, t, { type: 'lowpass', from: 500 * p, gain: 0.12, time: 0.014, attack: 0.0005 }); // its body
+      ring(out, t + 0.006, 1500 * p, 0.09, 0.04, -0.12); // the ring, lower, sagging up...
+      ring(out, t + 0.006, 2300 * p, 0.035, 0.025, -0.08); // ...and over it
+      burst(out, t + 0.012, { type: 'highpass', from: 3500 * p, gain: 0.07, time: 0.004, attack: 0.0002 }); // the tick
+    },
+
     // A bug biting him: its mandibles snapping shut, two hard clicks close together, a wet crunch as
     // they go in, a dull thud of it
     bite() {
@@ -444,6 +509,36 @@ export function createSounds() {
       burst(out, t, { type: 'highpass', from: 3000, to: 5000, gain: 0.05, time: 0.25, attack: 0.02 }); // the hiss
       ring(out, t + 0.05, 660, 0.06, 0.5, -0.02); // the chime...
       ring(out, t + 0.14, 990, 0.05, 0.7, -0.02); // ...going up
+    },
+
+    // A new level: a choir singing out "aah", a major chord swelling up and dying away gently in a hall
+    levelUp() {
+      choir({ up: 0.3, hold: 0.55, down: 1.3, chord: [261.6, 329.6, 392, 523.3], loud: 0.03, hall: 1.8 }); // (C major: C, E, G, the C over)
+    },
+
+    // A quest done: the level's choir, much shorter and quieter, and lower (a fourth down: told apart)
+    questDone() {
+      choir({ up: 0.12, hold: 0.12, down: 0.45, chord: [196, 246.9, 293.7, 392], loud: 0.015, hall: 0.9 }); // (G major)
+    },
+
+    // The gun reloaded, a part at a time (part: 'out', the empty magazine slid out: a short scrape; 'in',
+    // the new one slid in: the same, lower and quieter; 'bolt', the bolt: the click of a catch, a low scrape
+    // after it and a faint low ring). Close, short; each a little different
+    reload(part, after = 0) { // (after: seconds from now)
+      if (!ac || ac.state !== 'running') return;
+      const t = ac.currentTime + 0.005 + after, p = 0.95 + Math.random() * 0.1, out = ac.createGain(); // (clear: not squashed under the last shots)
+      out.gain.value = { out: 1, in: 0.25, bolt: 0.75 }[part]; // (the new one in as the one out, but quieter, and lower; the bolt a little quieter)
+      out.connect(voice(0.05, true));
+      const scrape = (gain = 1.7, from = 1000, to = 500) => burst(out, t + 0.01, { type: 'bandpass', from: from * p, to: to * p, q: 1.2, gain, time: 0.12, attack: 0.01 }); // (after a catch: low, loud)
+      if (part === 'out') { // (a magazine out: just its scrape, loud; and the rest of the mix pulled down under it a moment, so it cuts through a burst)
+        dry.gain.setTargetAtTime(0.45, t - 0.01, 0.01);
+        dry.gain.setTargetAtTime(1, t + 0.18, 0.08);
+        return scrape(1.6, 2600, 1400);
+      }
+      if (part === 'in') return scrape(1.6, 1700, 900); // (in: the same, lower)
+      burst(out, t, { type: 'bandpass', from: 1100 * p, q: 2, gain: 2, time: 0.014, attack: 0.0005 }); // the catch (low)
+      scrape(); // the scrape
+      ring(out, t, 1700 * p, 0.008, 0.05, 0.05); // (its ring, low, faint under it)
     },
 
     // The trigger pulled with no round to go (reloading, or out): just a short dry click, low and dull

@@ -44,9 +44,10 @@ export function createSpeech(ctx) {
       return line?.text ?? null;
     },
 
-    // The line centered over screen (x, y), its plate's bottom just above: over the hero's head.
-    // Returns its plate's { top, edge } (the x of its white edge, as a label card's), or null with nothing said
-    draw(x, y, dt) {
+    // The line centered over screen (x, y), its plate's bottom just above: over the hero's head (or, given
+    // edge, its white edge there: lined up on something under it). Returns its plate's { top, edge } (the
+    // x of its white edge, as a label card's), or null with nothing said
+    draw(x, y, dt, edge = null) {
       if (!line) return null;
       const n = line.text.length;
       const stay = n / TYPE_RATE + 2.5 + n / 30; // typed, then time to read it
@@ -61,7 +62,7 @@ export function createSpeech(ctx) {
       ctx.textBaseline = 'alphabetic';
       const w = Math.round(Math.max(...line.rows.map((r) => ctx.measureText(r).width)) + 21);
       const h = line.rows.length * LINE_H + 8;
-      const left = Math.round(x - w / 2) + 0.5, top = Math.round(y - 6 - h) + 0.5;
+      const left = Math.round(edge ?? x - w / 2) + 0.5, top = Math.round(y - 6 - h) + 0.5;
       ctx.globalAlpha = fade;
       // The plate, square on the left with a thick white edge, rounded on the right
       ctx.beginPath();
