@@ -38,7 +38,8 @@ export function createLabels(ctx) {
   // at at.y): a thick white edge on the left, rounded on the right. open (0..1) slides the prompt out
   // to the left from under the card's left edge, hold (0..1) fills its key. item.gold: edged in gold,
   // its key too, the key's name in gold, the text plain. item.quest (what the quest is after): edged in
-  // gold, its key too (and filled in gold as it's held), the names white.
+  // gold, its key too (and filled in gold as it's held), the names white. item.side (what a side quest's
+  // after): the same in blue.
   function card(item, open, hold, key = 'E') {
     const gold = item.gold || item.quest, font = item.gold || item.say ? SAY : NAME; // (say: in his lines' type, gold or not)
     const name = width(item.text, font), line = name + (item.tail ? width(item.tail, NAME) : 0);
@@ -47,7 +48,7 @@ export function createLabels(ctx) {
     const left = item.pin ? Math.round(item.pin.x) + 0.5 : item.at ? Math.round(item.at.x + keyWidth(key)) + 0.5 : Math.round((item.box.x0 + item.box.x1) / 2 - w / 2) + 0.5;
     const top = item.pin ? Math.round(item.pin.y - h / 2) + 0.5 : item.at ? Math.round(item.at.y - h) + 0.5 : Math.round(item.box.y0 - GAP - h) + 0.5;
 
-    if (open > 0) prompt(left, top, h, open, hold, key, gold, !!item.gold, item.count); // first: it's under the card
+    if (open > 0) prompt(left, top, h, open, hold, key, gold, !!item.gold, item.count, !gold && item.side, !!item.side && !!item.say); // first: it's under the card (a side quest's line: its key's name in blue too)
 
     // Square on the left with a thick white edge, rounded on the right (flip: the other way round, the
     // edge on the right)
@@ -71,7 +72,7 @@ export function createLabels(ctx) {
   // x = edge) as open goes 0..1, cut at that edge, so it seems to come from under it. Held, it fills
   // from right to left and its letter turns black over the fill.
   // count: a small line on a smaller white-edged plate out from under the key to its left ('0/4')
-  function prompt(edge, cardTop, cardH, open, hold, key, gold = false, goldName = false, count = '') { // gold: edged and filled in gold; goldName: its name too
+  function prompt(edge, cardTop, cardH, open, hold, key, gold = false, goldName = false, count = '', side = false, sideName = false) { // gold: edged and filled in gold; goldName: its name too; side, sideName: the same in blue
     const s = KEY_SIZE, kw = keyWidth(key), left = edge - Math.round(kw * open), top = cardTop + 2, cy = top + s / 2 - 0.5;
     const letter = (color) => text(key, KEY, left + kw / 2 - width(key, KEY) / 2, cy, color);
     const plate = new Path2D();
@@ -97,17 +98,17 @@ export function createLabels(ctx) {
     ctx.clip();
     ctx.fillStyle = PLATE;
     ctx.fill(plate);
-    ctx.strokeStyle = gold ? GOLD_EDGE : EDGE;
+    ctx.strokeStyle = gold ? GOLD_EDGE : side ? BLUE_EDGE : EDGE;
     ctx.lineWidth = 1;
     ctx.stroke(plate);
-    letter(goldName ? GOLD : '#fff');
+    letter(goldName ? GOLD : sideName ? BLUE : '#fff');
     const fill = Math.round((kw - 1) * hold);
     if (fill > 0) { // within the rounded plate
       ctx.clip(plate);
       ctx.beginPath();
       ctx.rect(left + kw - 0.5 - fill, top, fill + 1, s); // from the card's side out
       ctx.clip();
-      ctx.fillStyle = gold ? GOLD : '#fff';
+      ctx.fillStyle = gold ? GOLD : side ? BLUE : '#fff';
       ctx.fillRect(left, top, kw, s);
       letter('#000');
     }
@@ -139,10 +140,10 @@ export function createLabels(ctx) {
     // A warning edged in gold, its key out to press (Space, for the shell): its edge at x (as a card gives
     // it: on the half pixel), lined up over the card or line under it, its bottom at y; count: how far
     // along it is ('0/4'), small on a tab over its key
-    warn(text, key, x, y, hold = 0, count = '', gold = true) { // (gold false: the same, plain white: what to do that's not the story's)
+    warn(text, key, x, y, hold = 0, count = '', gold = true, side = false) { // (gold false: the same, plain white: what to do that's not the story's; side: in blue, a side quest's)
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
-      card({ text, count, gold, say: true, at: { x: x - 0.5 - keyWidth(key), y } }, 1, hold, key);
+      card({ text, count, gold, side, say: true, at: { x: x - 0.5 - keyWidth(key), y } }, 1, hold, key);
     },
     // One thing's card, as draw() puts it but with its key in: returns the x of its white edge
     one(item) {

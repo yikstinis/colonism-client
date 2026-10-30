@@ -1,7 +1,7 @@
 // Generates the game art (top-down view, camera 70 degrees) into public/assets/ plus sprites.json.
 //   npm run art              everything (~3 min)
 //   (the heroes' frames are drawn on all the cores: a worker thread each, WORKERS=n to say how many)
-//   ONLY=pod npm run art     just some parts (hero, hero_pack, pod, backpack, bed, stand, bedding, ...); the rest is kept as is
+//   ONLY=pod npm run art     just some parts (hero, hero_pack, pod, backpack, bed, stand, bedding, egg, equipment, well, cactus, rock_boulder, wreck, wreck_bow, mother, ...); the rest is kept as is
 // Real art can replace the PNGs later as long as it keeps the layout from sprites.json.
 
 import fs from 'node:fs';
@@ -13,7 +13,7 @@ import { ramp, rng, Sheet } from './lib/image.mjs';
 import { SHADOW_LIGHT, bodySdf, box, capsule, cone, ellipsoid, renderBody, renderShadow } from './lib/sdf-body.mjs';
 import {
   AIM_IN_TIME, AIM_OFFSETS, AIM_OUT_TIME, BACKPACK, BUG_BITE_SNAP, BUG_BITE_TIME, RELOAD_TIME, CROUCH_CYCLE, BED, BEDDING, BEDDING_FIRES, BLANKET, FIRE_ROUNDS, GAIT_CYCLE, GLADE_R, MATTRESS, PICK_GRAB,
-  CRATER_R, PICK_TIME, PILLOW, POD, POD_FIRES, POD_SCALE, ROLL_TIME, STRIKE_SLANT, STRIKE_WAY, SLASH_TIME, STAND, TURRET_FRAMES, GARAGE, GARAGE_SIZE, GARAGE_LEAF,
+  CRATER_R, PICK_TIME, PILLOW, POD, POD_FIRES, POD_SCALE, ROLL_TIME, STRIKE_SLANT, STRIKE_WAY, SLASH_TIME, STAND, TURRET_FRAMES, GARAGE, GARAGE_SIZE, GARAGE_LEAF, EGG_R, WRECK_PIECES, WRECK_ROCKET, CONTAINER_KINDS, FISSURE_KINDS, fissurePoints, fissureWidth,
 } from '../shared/world.js';
 
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets');
@@ -1536,6 +1536,193 @@ function makeFellow() {
   };
 }
 
+// ---------- Near the pole, by its campfire: the huge thing, an alien bug's egg ----------
+
+const EGG_W = 150, EGG_H = 190, EGG_ANCHOR = [75, 130], EGG_FRAMES = 4; // (frames: its pulse, out and in)
+const EGG_SHADOW_W = 240, EGG_SHADOW_H = 170, EGG_SHADOW_ANCHOR = [120, 90];
+const EGG_DECAL_W = 120, EGG_DECAL_H = 70, EGG_DECAL_ANCHOR = [60, 35];
+const EGG_RAMPS = [
+  ramp('#0f0905', '#1a1009', '#26180d', '#332012', '#412917', '#50331d', '#5f3d23', '#6f482a'), // its shell: leathery, the bugs' dark brown hide
+  ramp('#120806', '#1f0d09', '#2d130c', '#3c1a10', '#4b2214', '#5b2a18', '#6b331d', '#7c3d22'), // red-brown: its ribs
+  ramp('#050405', '#0b0a0c', '#121114', '#1a191d', '#232227', '#2d2c32', '#38373e', '#44434b'), // its spikes: dark, as the bugs' legs and jaws
+  ramp('#080504', '#0d0806', '#130b08', '#190f0a', '#20130c', '#27170e', '#2f1c11', '#372114'), // its ribs' edges: a darker brown, thin
+  ramp('#5a4a08', '#6e5c0b', '#84700f', '#9a8514', '#b09a1b', '#c6b025', '#dbc634', '#efdc4c'), // its eye: a sickly yellow, glowing (light even in the dark)
+  ramp('#020202', '#030303', '#040404', '#050505', '#060606', '#080808', '#0a0a0a', '#0c0c0c'), // the eye's pupil: a black slit
+];
+const [E_SHELL, E_RIB, E_SPIKE, E_LINE, E_EYE, E_PUPIL] = [0, 1, 2, 3, 4, 5];
+const EGG_HALF = 2.1, EGG_MID = 1.75; // meters: half its height, how high its middle is (its foot sunk in the poison)
+const EGG_RIBS = 8;
+// Its spikes, small, in rows up the middle of its ribs: [which rib (round it from +x, as atan2(y, x):
+// the camera's side +y is rib 2), how high on it (meters), how long]; every other rib's row a little
+// higher, so they don't line up round it
+const EGG_SPIKES = Array.from({ length: 8 }, (_, k) => [0.8, 1.8, 2.8].map((z) => [k, z + (k % 2) * 0.45, 0.3])).flat();
+// Its eye, right on top, where its ribs all meet: [its middle (meters, model space), how big round, which way it looks (up)]
+const EGG_EYE = [[0, 0, EGG_MID + EGG_HALF - 0.14], 0.3, [0, 0, 1]];
+const ribAngle = (k) => (k * Math.PI * 2) / EGG_RIBS;
+// Where its reek rises from (meters, model space): off its shell, round the middle and high up
+const EGG_REEK = [[-0.6, 0.5, 2.2], [0.7, 0.3, 2.8], [0, -0.2, 3.5]];
+
+// Model space, meters, its middle over the origin: an egg standing on end, broader low down, its foot
+// sunk in a pool of poison (the decal); leathery, a few broad ribs from foot to tip, lined in black,
+// small spikes in rows up the middle of its ribs; an eye on top, a black slit in it. b (0..1): how far through its pulse (it swells a little, the tip up)
+function eggModel(b = 0) {
+  const R = EGG_R * (1 + 0.025 * b), HALF = EGG_HALF * (1 + 0.015 * b);
+  const width = (z) => R * (1 - 0.22 * ((z - EGG_MID) / HALF)) * Math.sqrt(Math.max(0, 1 - ((z - EGG_MID) / HALF) ** 2)); // (round it at height z)
+  const shell = (x, y, z) => {
+    const q = (z - EGG_MID) / HALF, taper = 1 - 0.22 * q; // (narrower to its tip)
+    const rib = 0.04 * Math.max(0, Math.cos(Math.atan2(y, x) * EGG_RIBS)) * (1 - q * q); // (its ribs, foot to tip)
+    return (Math.hypot(Math.hypot(x, y) / (R * taper), q) - 1) * Math.min(R, HALF) * 0.85 - rib;
+  };
+  const prims = EGG_SPIKES.flatMap(([k, z, l]) => { // each from inside the shell out, then bent up to its point
+    const out = [Math.cos(ribAngle(k)), Math.sin(ribAngle(k))], w = width(z);
+    return [capsule([out[0] * (w - 0.04), out[1] * (w - 0.04), z], [out[0] * (w + l * 0.8), out[1] * (w + l * 0.8), z + l * 0.6], 0.085, 0.01)]; // (out, and a little up)
+  });
+  const spikes = bodySdf([{ k: 0.04, prims }], 0.01);
+  const [EYE, EYE_R, LOOK] = EGG_EYE, eye = (x, y, z) => Math.hypot(x - EYE[0], y - EYE[1], z - EYE[2]) - EYE_R;
+  const sdf = (x, y, z) => Math.max(Math.min(shell(x, y, z), spikes(x, y, z), eye(x, y, z)), -z);
+  return {
+    sdf, shape: sdf,
+    material: (x, y, z) => {
+      const sp = spikes(x, y, z), sl = shell(x, y, z), ey = eye(x, y, z);
+      if (Math.abs(ey - Math.min(sl, sp)) < 0.02) return E_LINE; // (round the eye, where the shell closes on it: the ribs' edge's line)
+      if (ey < Math.min(sl, sp)) { // the eye: the slit up and down it as it looks, a thin dark ring round it
+        const v = norm([x - EYE[0], y - EYE[1], z - EYE[2]]), side = norm(cross(LOOK, [0, 1, 0])), up = cross(side, LOOK);
+        const f = dot(v, LOOK), sx = dot(v, side), sy = dot(v, up);
+        if (f > 0.7 && Math.abs(sx) < 0.07 * (1 - (sy / 0.7) ** 2)) return E_PUPIL;
+        return f > 0.25 && f < 0.33 ? E_LINE : E_EYE;
+      }
+      if (Math.abs(sp - sl) < 0.015) return E_LINE; // (round a spike's root: the ribs' edge's line)
+      if (sp < sl) return E_SPIKE;
+      const ribs = (Math.atan2(y, x) / (Math.PI * 2)) * EGG_RIBS + 100, du = Math.abs(ribs - Math.round(ribs)); // (how far off the nearest rib, a rib apart 1)
+      const across = (du * Math.PI * 2 * Math.hypot(x, y)) / EGG_RIBS; // (meters off the rib's middle, round it)
+      const d = across - 0.15 * (Math.PI * 2 * Math.hypot(x, y)) / EGG_RIBS; // (how far out of the rib's stripe, meters: < 0 in it)
+      if (Math.abs(d) < 0.018) return E_LINE; // (its edge)
+      return d < 0 ? E_RIB : E_SHELL;
+    },
+  };
+}
+
+// The pool of poison it stands in, on the ground: yellow and green swirled together (each its
+// own streaks and blobs, dithered where they meet), glowing a little, a lighter sheen in it, its edge in
+// blobs and drops run off it, dithered out at the rim
+const POOL_COLORS = [ // [deep, rim, sheen] of each
+  [[152, 128, 20], [196, 170, 36], [240, 222, 80]], // yellow
+  [[46, 96, 24], [72, 140, 36], [128, 196, 64]], // green
+];
+function eggDecal() {
+  const c = new Uint8ClampedArray(EGG_DECAL_W * EGG_DECAL_H * 4);
+  const se = Math.sin(ELEV), R = 1.3; // (just past its foot: a little of it showing round it)
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const drops = [[1.45, 0.3, 0.12], [-1.4, -0.15, 0.1], [0.7, 0.75, 0.11]]; // (meters off its middle: x, y, how big)
+  for (let py = 0; py < EGG_DECAL_H; py++)
+    for (let px = 0; px < EGG_DECAL_W; px++) {
+      const gx = (px + 0.5 - EGG_DECAL_ANCHOR[0]) / PX_PER_M, gy = (py + 0.5 - EGG_DECAL_ANCHOR[1]) / (PX_PER_M * se);
+      const a = Math.atan2(gy, gx);
+      let d = Math.hypot(gx, gy * 1.15) / (R * (1 + 0.12 * Math.sin(a * 3 + 1) + 0.07 * Math.sin(a * 7)));
+      for (const [x, y, s] of drops) d = Math.min(d, Math.hypot(gx - x, gy - y) / s);
+      if (d >= 1) continue;
+      const th = (BAYER4[(py % 4) * 4 + (px % 4)] + 0.5) / 16;
+      if (d > 0.85 && th > (1 - d) / 0.15) continue; // (dithered out at its rim)
+      const sheen = d < 0.75 && Math.sin(gx * 1.6 + gy * 2.8 + Math.sin(gx * 1.3 - gy) * 1.5) > 0.9 + th * 0.06; // (in streaks)
+      const rim = d > 0.78;
+      const swirl = Math.sin(gx * 2.3 + Math.sin(gy * 3.1 + gx) * 1.8) + Math.sin(gy * 2.7 - gx * 1.2 + 2) * 0.8 + (th - 0.5) * 0.5; // (which of them, swirled)
+      const [deep, edge, shine] = POOL_COLORS[swirl < -0.2 ? 1 : 0];
+      c.set([...(sheen ? shine : rim ? edge : deep), sheen ? 235 : rim ? 230 : 225], (py * EGG_DECAL_W + px) * 4);
+    }
+  return c;
+}
+
+function makeEgg() {
+  const view = { pxPerM: PX_PER_M, elev: ELEV, yaw: 0, camDist: 12, focusZ: 1.5 };
+  const sh = new Sheet(EGG_W * EGG_FRAMES, EGG_H);
+  for (let i = 0; i < EGG_FRAMES; i++) {
+    const { sdf, material } = eggModel((1 - Math.cos((i / EGG_FRAMES) * Math.PI * 2)) / 2);
+    const img = renderBody(sdf, { W: EGG_W, H: EGG_H, anchor: EGG_ANCHOR, ...view, ramps: EGG_RAMPS, material, outline: [6, 4, 3], bound: [2.1, 3.0] });
+    sh.blit(img, EGG_W, EGG_H, i * EGG_W, 0);
+  }
+  save(sh, 'egg.png');
+  const shadow = renderShadow(eggModel(0).shape, { W: EGG_SHADOW_W, H: EGG_SHADOW_H, anchor: EGG_SHADOW_ANCHOR, ...view, light: SHADOW_LIGHT, alpha: 0.55, reach: 4.5 });
+  const ss = new Sheet(EGG_SHADOW_W, EGG_SHADOW_H);
+  ss.blit(shadow, EGG_SHADOW_W, EGG_SHADOW_H, 0, 0);
+  save(ss, 'egg_shadow.png');
+  const decal = new Sheet(EGG_DECAL_W, EGG_DECAL_H);
+  decal.blit(eggDecal(), EGG_DECAL_W, EGG_DECAL_H, 0, 0);
+  save(decal, 'egg_decal.png');
+  return {
+    image: 'egg.png', frame: [EGG_W, EGG_H], anchor: EGG_ANCHOR, frames: EGG_FRAMES,
+    decal: { image: 'egg_decal.png', frame: [EGG_DECAL_W, EGG_DECAL_H], anchor: EGG_DECAL_ANCHOR },
+    shadow: { image: 'egg_shadow.png', frame: [EGG_SHADOW_W, EGG_SHADOW_H], anchor: EGG_SHADOW_ANCHOR },
+    reek: EGG_REEK, reekColor: [200, 180, 60], // (reek rising off it, as off a dead bug, but yellow, as its poison: see client.js)
+  };
+}
+
+// What's left of it once it's burst (see client.js): the pit it stood over, a deep well sunk in the
+// ground, its rough earthen walls going down in bands, yellow poison drooling down them, a pool of it
+// far down at the bottom (yellow and green swirled, glowing, bubbling), lighting the walls low down;
+// a lip of broken earth round it, the ground stained yellow-green past it, dithered out. Flat on the
+// ground (drawn as a thing's body, under everyone), thick yellow reek rising out of it
+const PIT_W = 120, PIT_H = 112, PIT_ANCHOR = [60, 54];
+const PIT_R = 1.05, PIT_DEPTH = 3.4; // meters: round its mouth; down to the poison
+const PIT_REEK = [[0, 0, 0], [0.45, 0.15, 0], [-0.45, -0.1, 0], [0.15, -0.4, 0], [-0.2, 0.4, 0]];
+function eggPitDecal() {
+  const c = new Uint8ClampedArray(PIT_W * PIT_H * 4);
+  const se = Math.sin(ELEV), ce = Math.cos(ELEV), L = norm([-0.7, 0.15, 0.85]);
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const mouth = (a) => PIT_R * (1 + 0.05 * Math.sin(a * 3 + 1) + 0.03 * Math.sin(a * 7 + 2)); // (a little out of round)
+  const drools = [[-1.25, 1.6], [-1.9, 0.9], [-2.45, 2.4]]; // (the far side: poison run down the wall from there, [angle round the mouth, how far down])
+  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  for (let py = 0; py < PIT_H; py++)
+    for (let px = 0; px < PIT_W; px++) {
+      const sx = (px + 0.5 - PIT_ANCHOR[0]) / PX_PER_M, sy = (py + 0.5 - PIT_ANCHOR[1]) / PX_PER_M; // (screen meters, down +)
+      const gx = sx, gy = sy / se, a = Math.atan2(gy, gx), d = Math.hypot(gx, gy) / mouth(a);
+      const th = (BAYER4[(py % 4) * 4 + (px % 4)] + 0.5) / 16, n = hash(px, py);
+      const at = (py * PIT_W + px) * 4;
+      if (d < 1) { // into it: the poison far down, or the far wall going down to it
+        const by = (sy - PIT_DEPTH * ce) / se, bd = Math.hypot(gx, by) / (PIT_R * 0.96); // (the poison's surface: the mouth's ring, down PIT_DEPTH)
+        if (bd < 1) {
+          const swirl = Math.sin(gx * 3.1 + Math.sin(by * 3.7 + gx) * 1.8) + Math.sin(by * 3.3 - gx * 1.5 + 2) * 0.8 + (th - 0.5) * 0.5;
+          const [deep, rim, shine] = POOL_COLORS[swirl < -0.3 ? 1 : 0];
+          const bub = hash(Math.floor(gx * 7 + 50), Math.floor(by * 7 + 50)), ring = Math.abs(Math.hypot((gx * 7) % 1 - 0.5, (by * 7) % 1 - 0.5) - 0.3) < 0.08;
+          const sheen = Math.sin(gx * 2.2 + by * 3.4 + Math.sin(gx * 1.7 - by) * 1.5) > 0.88 + th * 0.06;
+          const col = bub > 0.88 && ring && bd < 0.85 ? shine : sheen ? shine : bd > 0.85 ? mix(deep, [20, 18, 6], (bd - 0.85) / 0.15 * 0.6) : mix(deep, rim, Math.max(0, 0.6 - bd)); // (bubbles, streaks; darker where it meets the wall)
+          c.set([...col, 255], at);
+          continue;
+        }
+        const far = -Math.sqrt(Math.max(0, 1 - (gx / PIT_R) ** 2)), z = Math.max(0, (sy - PIT_R * far * se) / ce); // (the far wall's point seen here: how far down)
+        const wa = Math.atan2(far, gx / PIT_R), lit = Math.max(0, -Math.cos(wa) * L[0] - Math.sin(wa) * L[1]) * 0.55 + 0.25;
+        const dark = Math.max(0.1, 1 - (z / PIT_DEPTH) * 1.1); // (darker down it)
+        const band = (z * 3.2 + hash(Math.floor(wa * 9 + 40), 3) * 0.6) % 1, crack = band < 0.12 || (hash(Math.floor(wa * 14 + 40), Math.floor(z * 3.2)) > 0.8 && Math.abs((wa * 14) % 1) < 0.12);
+        const earth = n > 0.5 ? [74, 58, 46] : [66, 52, 42];
+        let col = earth.map((v) => v * Math.round(lit * dark * (crack ? 0.45 : 1) * 6) / 6);
+        const glow = Math.max(0, 1 - (PIT_DEPTH - z) / 1.2); // (the poison's light, low down)
+        col = mix(col, [150, 130, 24], Math.round(glow * 0.7 * 4) / 4);
+        const drool = drools.some(([dr, len]) => z < len * (0.85 + 0.15 * Math.sin(dr * 7)) && Math.abs(Math.atan2(Math.sin(wa - dr - 0.05 * Math.sin(z * 4 + dr)), Math.cos(wa - dr - 0.05 * Math.sin(z * 4 + dr)))) * PIT_R < 0.035 + 0.025 * (1 - z / len) + (z > len * 0.8 ? 0.02 : 0));
+        if (drool) col = mix(POOL_COLORS[0][0], POOL_COLORS[0][1], 0.3).map((v) => v * dark ** 0.5);
+        c.set([...col.map(Math.round), 255], at);
+        continue;
+      }
+      if (d < 1.22) { // its lip: broken earth thrown up round the mouth, lit from the moon's side, drools of poison over it on the far side
+        const u = (d - 1) / 0.22, lip = Math.max(0, -Math.cos(a) * L[0] - Math.sin(a) * L[1]) * (1 - u) * 0.6 + 0.55;
+        const lump = hash(Math.floor(a * 16 + 60), Math.floor(u * 3)) > 0.5 ? 1 : 0.82;
+        const drool = drools.some(([dr]) => Math.abs(Math.atan2(Math.sin(a - dr), Math.cos(a - dr))) < 0.08 * (1 - u));
+        const edge = u < 0.12 ? 0.35 : 1; // (the mouth's dark edge)
+        const col = drool ? POOL_COLORS[0][1] : (n > 0.5 ? [78, 66, 58] : [70, 60, 53]).map((v) => Math.round(v * Math.round(lip * lump * edge * 5) / 5));
+        if (u > 0.75 && th > (1 - u) / 0.25 + 0.2) continue; // (dithered into the ground)
+        c.set([...col, 255], at);
+        continue;
+      }
+      const stain = 1 - (d - 1.22) / (0.1 + 0.3 * hash(Math.floor(((a + Math.PI) / (2 * Math.PI)) * 40), 9)); // (the ground stained by it, in splashes)
+      if (stain > th) c.set([...mix(POOL_COLORS[th > 0.6 ? 1 : 0][0], [30, 28, 26], 0.5), Math.round(60 + 80 * stain)], at);
+    }
+  return c;
+}
+function makeEggPit() {
+  const sh = new Sheet(PIT_W, PIT_H);
+  sh.blit(eggPitDecal(), PIT_W, PIT_H, 0, 0);
+  save(sh, 'egg_pit.png');
+  return { image: 'egg_pit.png', frame: [PIT_W, PIT_H], anchor: PIT_ANCHOR, reek: PIT_REEK, reekColor: [200, 180, 60] };
+}
+
 // ---------- The strike: a small rocket flying in, and the crater its blast leaves ----------
 
 const ROCKET_W = 60, ROCKET_H = 70, ROCKET_ANCHOR = [30, 50]; // the anchor at its nose
@@ -1803,6 +1990,201 @@ function makeBug() {
   };
 }
 
+// ---------- Ravens: a few together on the ground, pecking; flying off as he comes near ----------
+
+const RAVEN = 64, RAVEN_ANCHOR = [32, 40];
+const RAVEN_SHADOW_W = 72, RAVEN_SHADOW_H = 56, RAVEN_SHADOW_ANCHOR = [36, 28];
+const RAVEN_IDLE = 6, RAVEN_FLY = 6, RAVEN_FLAP = 0.4; // frames; seconds a wingbeat takes
+const RAVEN_SCALE = 0.8; // (a little smaller than life)
+const RAVEN_RAMPS = [
+  ramp('#030305', '#07070b', '#0c0c13', '#13131c', '#1b1b27', '#252534', '#303045', '#3d3d58'), // its feathers: black, a blue sheen
+  ramp('#050505', '#0b0b0b', '#121212', '#1a1a1a', '#232323', '#2d2d2d', '#383838', '#444444'), // its beak and legs
+];
+
+// Model space, meters, facing +y: a raven, half a meter long. Standing (fly null): its body leant
+// forward, its wings folded along its sides, its tail, its legs; peck (0..1) dips its head to the
+// ground. Flying (fly: the wingbeat, radians): no legs, its wings spread wide out to the sides, flapping
+// up and down, its tail fanned
+function ravenModel(peck, fly) {
+  const feathers = [], hard = [];
+  const head = fly === null ? [0, 0.17 + 0.05 * peck, 0.27 - 0.17 * peck] : [0, 0.2, 0.22];
+  feathers.push(ellipsoid([0, 0, fly === null ? 0.19 : 0.2], [0.085, 0.17, 0.08]), ellipsoid(head, [0.06, 0.07, 0.06]));
+  feathers.push(capsule([0, head[1] - 0.06, head[2] - 0.02], [0, 0.04, 0.21], 0.05)); // its neck
+  const beakOut = fly === null ? [0, head[1] + 0.1 + 0.02 * peck, head[2] - 0.02 - 0.07 * peck] : [0, head[1] + 0.11, head[2] - 0.01];
+  hard.push(cone([0, head[1] + 0.04, head[2]], beakOut, 0.025, 0.004));
+  feathers.push(box([0, -0.22, fly === null ? 0.15 : 0.19], [[1, 0, 0], [0, 1, 0.25], [0, -0.25, 1].map((v) => v / Math.hypot(1, 0.25))].map((a, i) => (i === 1 ? a.map((v) => v / Math.hypot(1, 0.25)) : a)), [fly === null ? 0.05 : 0.09, 0.1, 0.012], 0.01)); // its tail
+  if (fly === null) {
+    for (const s of [-1, 1]) feathers.push(ellipsoid([s * 0.075, -0.03, 0.21], [0.035, 0.16, 0.055])); // its wings, folded
+    for (const s of [-1, 1]) hard.push(capsule([s * 0.035, 0.02, 0.12], [s * 0.04, 0.04, 0], 0.012)); // its legs
+  } else {
+    const up = Math.sin(fly) * 0.9; // (the wing's angle up from flat)
+    for (const s of [-1, 1]) {
+      const out = [s * Math.cos(up), 0, Math.sin(up)], axes = [out, [0, 1, 0], [-out[2] * s, 0, Math.cos(up)]];
+      const along = (d, back) => [s * 0.06 + out[0] * d, -0.02 - back, 0.21 + out[2] * d];
+      feathers.push(box(along(0.13, 0), axes, [0.13, 0.1, 0.012], 0.01), box(along(0.36, 0.03), axes, [0.12, 0.065, 0.01], 0.01)); // a wing, spread: narrowing out to its tip, swept back
+    }
+  }
+  const f = bodySdf([{ k: 0.03, prims: feathers }], 0.03), h = bodySdf([{ k: 0.005, prims: hard }], 0.005);
+  return {
+    sdf: (x, y, z) => Math.max(Math.min(f(x, y, z), h(x, y, z)), -z),
+    shape: (x, y, z) => Math.min(f(x, y, z), h(x, y, z)),
+    material: (x, y, z) => (h(x, y, z) < f(x, y, z) ? 1 : 0),
+  };
+}
+
+function makeRaven() {
+  const cycle = (i, n) => (i / n) * Math.PI * 2;
+  const anims = [ // [name, frames, fps, (frame) => model]
+    ['idle', RAVEN_IDLE, 4, (i) => ravenModel([0, 0, 0.6, 1, 0.5, 0][i], null)], // (standing, a peck at the ground)
+    ['fly', RAVEN_FLY, RAVEN_FLY / RAVEN_FLAP, (i) => ravenModel(0, cycle(i, RAVEN_FLY))],
+  ];
+  const cols = anims.reduce((n, a) => n + a[1], 0);
+  const color = new Sheet(cols * RAVEN, DIRS.length * RAVEN), shadows = new Sheet(cols * RAVEN_SHADOW_W, DIRS.length * RAVEN_SHADOW_H);
+  const animations = {};
+  let col = 0;
+  for (const [anim, frames, fps, model] of anims) {
+    animations[anim] = { start: col, frames, fps };
+    for (let i = 0; i < frames; i++, col++) {
+      const m = model(i), k = RAVEN_SCALE, sdf = (x, y, z) => k * m.sdf(x / k, y / k, z / k), shape = (x, y, z) => k * m.shape(x / k, y / k, z / k);
+      const material = (x, y, z) => m.material(x / k, y / k, z / k);
+      DIRS.forEach((_, row) => {
+        const yaw = (row * Math.PI) / 4;
+        const img = renderBody(sdf, {
+          W: RAVEN, H: RAVEN, anchor: RAVEN_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw,
+          camDist: 5.5, focusZ: 0.9, ramps: RAVEN_RAMPS, material, outline: [4, 4, 6], bound: [0.3, 1.1],
+        });
+        color.blit(img, RAVEN, RAVEN, col * RAVEN, row * RAVEN);
+        const shadow = renderShadow(shape, {
+          W: RAVEN_SHADOW_W, H: RAVEN_SHADOW_H, anchor: RAVEN_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw,
+          camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.5,
+        });
+        shadows.blit(shadow, RAVEN_SHADOW_W, RAVEN_SHADOW_H, col * RAVEN_SHADOW_W, row * RAVEN_SHADOW_H);
+      });
+    }
+  }
+  save(color, 'raven.png');
+  save(shadows, 'raven_shadow.png');
+  return {
+    image: 'raven.png', frame: [RAVEN, RAVEN], anchor: RAVEN_ANCHOR, rows: DIRS, animations,
+    shadow: { image: 'raven_shadow.png', frame: [RAVEN_SHADOW_W, RAVEN_SHADOW_H], anchor: RAVEN_SHADOW_ANCHOR },
+  };
+}
+
+// ---------- The Mother: the bugs' queen, behind the wreck ----------
+
+// The bugs' front (their head and the first of their segments, bulkier, spiked along the back, a crown
+// of horns on the head), dragging a huge swollen sac behind it: pale, veined, eggs bulging in it, heaving
+// as she breathes. Drawn MOTHER_SCALE of this, her middle (MOTHER_SHIFT down the model) at her feet
+const MOTHER_SCALE = 1.7, MOTHER_SHIFT = 1.1;
+const MOTHER_W = 230, MOTHER_H = 210, MOTHER_ANCHOR = [115, 112];
+const MOTHER_SHADOW_W = 300, MOTHER_SHADOW_H = 230, MOTHER_SHADOW_ANCHOR = [150, 115];
+const MOTHER_RAMPS = [
+  ...BUG_RAMPS,
+  ramp('#1e1410', '#352219', '#4f3426', '#6b4836', '#875e48', '#a3775d', '#bd9276', '#d6ae93'), // her sac: pale, fleshy
+  ramp('#14040a', '#25081a', '#380d26', '#4c1232', '#61173e', '#771d4a', '#8d2456', '#a42c62'), // veins in it
+  ramp('#2a2408', '#45390d', '#625314', '#80701d', '#9e8d2b', '#bba93f', '#d4c45a', '#ece07c'), // eggs bulging in it
+];
+const [M_SAC, M_VEIN, M_EGG] = [4, 5, 6];
+// Her front, head first (the bugs', bulkier), then her sac: [y, half width, half length, half height]
+const MOTHER_FRONT = BUG_SEGMENTS.slice(0, 6).map(([y, rx, ry, rz]) => [y, rx * 1.2, ry, rz * 1.15]);
+const MOTHER_SAC = [[-0.72, 0.4, 0.2, 0.34], [-1.1, 0.58, 0.25, 0.48], [-1.55, 0.66, 0.28, 0.55], [-2.0, 0.6, 0.26, 0.5], [-2.4, 0.44, 0.22, 0.36], [-2.7, 0.24, 0.14, 0.2]];
+const MOTHER_EGGS = Array.from({ length: 16 }, (_, i) => { const r = rng(40 + i); return [r() * 2 - 1, r(), r()]; }); // [round her, which of the sac's segments (0..1 along), how high]
+
+// phase: the crawl's (radians, 0 still); breath (0..1): her sac heaving, her jaws stirring; bite: bugBite's, or null
+function motherModel(phase = 0, breath = 0, bite = null) {
+  const parts = MOTHER_RAMPS.map(() => []);
+  const { rear = 0, lunge = 0, gape = 0 } = bite ?? {};
+  const Y = MOTHER_SHIFT;
+  MOTHER_FRONT.forEach(([y0, rx, ry, rz], k) => {
+    const sway = phase ? 0.03 * Math.sin(phase - k * 0.8) : 0, hump = phase ? 0.015 * Math.max(0, Math.sin(phase - k * 0.8)) : 0;
+    const w = Math.max(0, 1 - k / 5), by = w * (0.3 * lunge - 0.12 * rear) + 0.05 * lunge, bz = w * (0.34 * rear - 0.04 * lunge);
+    const y = y0 + by + Y, z = rz + 0.03 + hump + bz;
+    parts[k === 0 ? BUG_BLACK : BUG_HIDE].push(ellipsoid([sway, y, z], [rx, ry * 1.25, rz]));
+    if (k === 0) { // the head: jaws (wide as she bites), her mouth red between them; a crown of horns swept back
+      for (const sx of [-1, 1]) parts[BUG_DARK].push(capsule([sx * 0.06, y + 0.08, z - 0.04], [sx * (0.03 + 0.03 * breath + 0.17 * gape), y + 0.18 + 0.1 * gape, z - 0.06], 0.02 + 0.01 * gape));
+      if (gape > 0.05) parts[BUG_RUST].push(ellipsoid([0, y + 0.09, z - 0.02], [0.08 * gape, 0.06 * gape, 0.07 * gape]));
+      for (const [sx, l] of [[-1, 0.16], [-0.45, 0.2], [0, 0.22], [0.45, 0.2], [1, 0.16]]) parts[BUG_DARK].push(cone([sx * 0.09, y - 0.02, z + rz * 0.6], [sx * 0.14, y - 0.12, z + rz * 0.6 + l], 0.025, 0.004));
+      return;
+    }
+    for (const sx of [-1, 1]) { // spikes up her back, a pair on each segment
+      parts[BUG_DARK].push(cone([sx * rx * 0.45 + sway, y, z + rz * 0.75], [sx * rx * 0.6 + sway, y - 0.05, z + rz + 0.13], 0.03, 0.004));
+      for (const [dy, off] of [[ry * 0.5, 0], [-ry * 0.5, Math.PI]]) { // and her legs, longer, in a wave
+        const a = phase - k * 0.8 + off + (sx > 0 ? 0 : Math.PI / 2), swing = phase ? 0.04 * Math.sin(a) : 0, lift = phase ? 0.025 * Math.max(0, Math.cos(a)) : 0;
+        parts[BUG_DARK].push(capsule([sx * (rx - 0.04) + sway, y + dy, 0.09 + bz], [sx * (rx + 0.13) + sway, y + dy + swing + 0.04 * w * rear, lift + 0.7 * bz], 0.02));
+      }
+    }
+  });
+  // Her sac, dragged behind, heaving (swelling as she breathes, the wave of her crawl running down it)
+  const swell = 1 + 0.045 * Math.sin(breath * Math.PI);
+  MOTHER_SAC.forEach(([y0, rx, ry, rz], k) => {
+    const sway = phase ? 0.04 * Math.sin(phase - (k + 6) * 0.8) : 0, s = swell * (phase ? 1 + 0.02 * Math.sin(phase - k) : 1);
+    parts[M_SAC].push(ellipsoid([sway, y0 + Y, rz * s], [rx * s, ry * 1.35, rz * s]));
+  });
+  for (const [round, along, high] of MOTHER_EGGS) { // eggs bulging in it, up its sides and over its top
+    const k = Math.min(MOTHER_SAC.length - 2, Math.floor(along * (MOTHER_SAC.length - 1))), [y0, rx, , rz] = MOTHER_SAC[k], a = round * 1.4;
+    const r = 0.06 + 0.04 * high, h = rz * swell * (0.5 + 0.55 * high);
+    parts[M_EGG].push(ellipsoid([Math.sin(a) * rx * swell * 0.92, y0 + Y + (high - 0.5) * 0.2, h + Math.cos(a) * rz * swell * 0.45], [r, r * 1.2, r * 0.8]));
+  }
+  const fields = parts.map((prims) => (prims.length ? bodySdf([{ k: 0.02, prims }], 0.01) : () => 1e9));
+  return {
+    shape: (x, y, zz) => Math.min(...fields.map((f) => f(x, y, zz))),
+    sdf: (x, y, zz) => Math.max(Math.min(...fields.map((f) => f(x, y, zz))), -zz),
+    material: (x, y, zz) => {
+      let best = 0, d = 1e9;
+      fields.forEach((f, i) => { const v = f(x, y, zz); if (v < d) { d = v; best = i; } });
+      if (best === M_SAC) { // veins branching over it
+        const v = Math.sin(x * 9 + Math.sin(y * 5) * 2) * Math.sin(y * 7 + zz * 6 + Math.sin(x * 4) * 1.5);
+        return Math.abs(v) < 0.07 ? M_VEIN : M_SAC;
+      }
+      if (best !== BUG_HIDE) return best;
+      if (MOTHER_FRONT.some(([sy, , ry], k) => k > 0 && Math.abs(y - Y - (sy + ry * 1.25 * 0.85)) < 0.02)) return BUG_BLACK;
+      const n = hash(Math.floor(x * 30 + 50), Math.floor(y * 30 + zz * 20 + 50)), m = Math.sin(x * 21 + y * 17) + Math.sin(y * 29 - zz * 23);
+      if (m > 0.8) return BUG_RUST;
+      if (m < -0.9 || n < 0.12) return BUG_BLACK;
+      return best;
+    },
+  };
+}
+
+function makeMother() {
+  const cycle = (i, n) => (i / n) * Math.PI * 2;
+  const anims = [ // [name, frames, fps, (frame) => model]
+    ['idle', BUG_IDLE, 4, (i) => motherModel(0, (1 - Math.cos(cycle(i, BUG_IDLE))) / 2)],
+    ['walk', BUG_WALK, BUG_WALK / BUG_WALK_CYCLE, (i) => motherModel(cycle(i, BUG_WALK) || 1e-6, 0.5)],
+    ['bite', BUG_BITE_FRAMES, BUG_BITE_FRAMES / BUG_BITE_TIME, (i) => motherModel(0, 0.5, bugBite((i + 0.5) / BUG_BITE_FRAMES))], // (played once)
+  ];
+  const cols = anims.reduce((n, a) => n + a[1], 0);
+  const color = new Sheet(cols * MOTHER_W, DIRS.length * MOTHER_H), shadows = new Sheet(cols * MOTHER_SHADOW_W, DIRS.length * MOTHER_SHADOW_H);
+  const animations = {};
+  let col = 0;
+  for (const [anim, frames, fps, model] of anims) {
+    animations[anim] = { start: col, frames, fps };
+    for (let i = 0; i < frames; i++, col++) {
+      const m = model(i), k = MOTHER_SCALE, sdf = (x, y, z) => k * m.sdf(x / k, y / k, z / k), shape = (x, y, z) => k * m.shape(x / k, y / k, z / k);
+      const material = (x, y, z) => m.material(x / k, y / k, z / k);
+      DIRS.forEach((_, row) => {
+        const yaw = (row * Math.PI) / 4;
+        const img = renderBody(sdf, {
+          W: MOTHER_W, H: MOTHER_H, anchor: MOTHER_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw,
+          camDist: 8, focusZ: 0.9, ramps: MOTHER_RAMPS, material, outline: [4, 3, 3], bound: [0.8, 3.1],
+        });
+        color.blit(img, MOTHER_W, MOTHER_H, col * MOTHER_W, row * MOTHER_H);
+        const shadow = renderShadow(shape, {
+          W: MOTHER_SHADOW_W, H: MOTHER_SHADOW_H, anchor: MOTHER_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw,
+          camDist: 8, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55, reach: 3.4,
+        });
+        shadows.blit(shadow, MOTHER_SHADOW_W, MOTHER_SHADOW_H, col * MOTHER_SHADOW_W, row * MOTHER_SHADOW_H);
+      });
+    }
+  }
+  save(color, 'mother.png');
+  save(shadows, 'mother_shadow.png');
+  return {
+    image: 'mother.png', frame: [MOTHER_W, MOTHER_H], anchor: MOTHER_ANCHOR, rows: DIRS, animations,
+    shadow: { image: 'mother_shadow.png', frame: [MOTHER_SHADOW_W, MOTHER_SHADOW_H], anchor: MOTHER_SHADOW_ANCHOR },
+  };
+}
+
 // ---------- Bottles to shoot: a row of them standing in the straw of an old wooden crate ----------
 
 const BOTTLES_W = 70, BOTTLES_H = 80, BOTTLES_ANCHOR = [35, 58];
@@ -1898,6 +2280,642 @@ function makeBottles() {
   };
 }
 
+// ---------- The fellow's equipment: a waist-high wooden crate, open, his glassware packed in it ----------
+
+const EQUIP_W = 84, EQUIP_H = 80, EQUIP_ANCHOR = [42, 53];
+const EQUIP_SHADOW_W = 140, EQUIP_SHADOW_H = 110, EQUIP_SHADOW_ANCHOR = [70, 55];
+const EQUIP_YAW = 0.25; // (turned a little: dumped, not set down)
+const EQUIP_RAMPS = [
+  ramp('#1a1008', '#2c1c0e', '#402914', '#56381b', '#6c4823', '#83592c', '#9a6b37', '#b27f44'), // the crate's pine boards
+  ramp('#0d0805', '#170e08', '#22150b', '#2e1d0f', '#3a2513', '#462e18', '#53371d', '#604123'), // its battens, the gaps between boards
+  ramp('#2a1f08', '#45330d', '#614914', '#7e611c', '#9b7a27', '#b69434', '#cdad46', '#e0c45e'), // straw on its bottom
+  ramp('#1d2024', '#2e3237', '#454a50', '#5f656b', '#7c8288', '#9aa0a5', '#b9bdc1', '#d6d9db'), // steel: the rack, the lamp's foot
+  ramp('#26302e', '#344240', '#445654', '#566b69', '#6b8280', '#839a98', '#9db3b1', '#bacdcb'), // clear glass
+  ramp('#04180a', '#082a12', '#0e401c', '#165a28', '#207636', '#2e9446', '#46b25c', '#6ad07c'), // green stuff in it
+  ramp('#050d24', '#0a1638', '#10224f', '#183068', '#224082', '#2f539c', '#4268b6', '#5a82cf'), // blue stuff
+  ramp('#2a0303', '#4a0605', '#6e0a08', '#94100c', '#b81a12', '#d8301d', '#ef5232', '#ff8458'), // red: stuff, the beacon's lamp
+  ramp('#2a1f08', '#45330d', '#614914', '#7e611c', '#9b7a27', '#b69434', '#cdad46', '#e0c45e'), // corks
+];
+const [Q_BOARD, Q_BATTEN, Q_PACKING, Q_STEEL, Q_GLASS, Q_GREEN, Q_BLUE, Q_RED, Q_CORK] = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+const EQUIP_L = 0.46, EQUIP_D = 0.33, EQUIP_TOP = 0.95; // half its length and depth; its walls' height (to the hero's waist)
+
+// Model space, meters: the crate on the sand, its long side along x, open at the top, straw on its
+// bottom; in it, just over its brim, a rack of test tubes, a conical flask and a round one, each
+// with something colored in it (drawn big, beyond life, as the bottles are); the fellow's beacon lamp
+// on a corner
+function equipmentModel() {
+  const parts = EQUIP_RAMPS.map(() => []);
+  const ax = flatTurn(0), T = EQUIP_TOP;
+  // The walls (boards round an open top), its corner posts and battens across the sides
+  for (const sy of [-1, 1]) parts[Q_BOARD].push(box([0, sy * EQUIP_D, T / 2], ax, [EQUIP_L, 0.022, T / 2], 0.006));
+  for (const sx of [-1, 1]) parts[Q_BOARD].push(box([sx * EQUIP_L, 0, T / 2], ax, [0.022, EQUIP_D, T / 2], 0.006));
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) parts[Q_BATTEN].push(box([sx * (EQUIP_L + 0.012), sy * (EQUIP_D + 0.012), T / 2 + 0.01], ax, [0.035, 0.035, T / 2 + 0.01], 0.006));
+  for (const sy of [-1, 1]) for (const z of [0.12, T - 0.1]) parts[Q_BATTEN].push(box([0, sy * (EQUIP_D + 0.03), z], ax, [EQUIP_L - 0.03, 0.012, 0.04], 0.005));
+  for (const sy of [-1, 1]) parts[Q_BATTEN].push(box([0, sy * (EQUIP_D + 0.03), T / 2], [norm([1, 0, 0.62 * sy]), [0, 1, 0], norm([-0.62 * sy, 0, 1])], [EQUIP_L - 0.04, 0.012, 0.035], 0.005)); // (a brace corner to corner)
+  // Straw on its bottom, heaped up a little, a hand's breadth under the brim (the boards' insides show
+  // over it), loose stalks lying about on it
+  const S = T - 0.22; // (its top)
+  parts[Q_PACKING].push(box([0, 0, S - 0.04], ax, [EQUIP_L - 0.02, EQUIP_D - 0.02, 0.05], 0.03));
+  for (const [x, y, rx] of [[-0.26, 0.14, 0.12], [0.09, -0.16, 0.13], [0.3, 0.11, 0.11], [-0.02, 0.16, 0.09], [0.32, -0.18, 0.08]]) parts[Q_PACKING].push(ellipsoid([x, y, S], [rx, 0.09, 0.035]));
+  parts[Q_PACKING].push(...straws(11, 22, (r) => [(r() * 2 - 1) * (EQUIP_L - 0.08), (r() * 2 - 1) * (EQUIP_D - 0.08), S + 0.03, r() * Math.PI * 2, 0.08 + 0.07 * r()]));
+  // A steel rack of test tubes at the back left, each one half full, corked
+  parts[Q_STEEL].push(box([-0.2, -0.12, S + 0.04], ax, [0.19, 0.06, 0.035], 0.008));
+  [Q_GREEN, Q_RED, Q_BLUE, Q_GREEN, Q_RED].forEach((c, i) => {
+    const x = -0.35 + i * 0.075, y = -0.12;
+    parts[c].push(capsule([x, y, S], [x, y, T + 0.02], 0.03)); // what's in it
+    parts[Q_GLASS].push(capsule([x, y, T + 0.02], [x, y, T + 0.17], 0.03)); // the glass over it
+    parts[Q_CORK].push(cone([x, y, T + 0.17], [x, y, T + 0.21], 0.028, 0.032));
+  });
+  // A conical flask at the front right, green stuff in it, its neck corked
+  const [fx, fy] = [0.24, 0.11];
+  parts[Q_GREEN].push(cone([fx, fy, S], [fx, fy, T - 0.06], 0.13, 0.07));
+  parts[Q_GLASS].push(cone([fx, fy, T - 0.06], [fx, fy, T + 0.02], 0.07, 0.035), capsule([fx, fy, T + 0.02], [fx, fy, T + 0.1], 0.032));
+  parts[Q_CORK].push(cone([fx, fy, T + 0.1], [fx, fy, T + 0.14], 0.03, 0.036));
+  // A round flask at the front left, blue, tipped a little in the shavings
+  const [rx, ry] = [-0.21, 0.12];
+  parts[Q_BLUE].push(ellipsoid([rx, ry, S + 0.06], [0.1, 0.1, 0.1]));
+  parts[Q_GLASS].push(capsule([rx, ry, S + 0.14], [rx + 0.04, ry - 0.03, T + 0.06], 0.03));
+  parts[Q_CORK].push(capsule([rx + 0.04, ry - 0.03, T + 0.06], [rx + 0.045, ry - 0.035, T + 0.09], 0.033));
+  // The fellow's beacon: a red lamp on the back right corner post
+  parts[Q_STEEL].push(cone([EQUIP_L + 0.012, -EQUIP_D - 0.012, T + 0.02], [EQUIP_L + 0.012, -EQUIP_D - 0.012, T + 0.05], 0.045, 0.04));
+  parts[Q_RED].push(ellipsoid([EQUIP_L + 0.012, -EQUIP_D - 0.012, T + 0.085], [0.035, 0.035, 0.04]));
+  const fields = parts.map((prims) => bodySdf([{ k: 0.004, prims }], 0.004));
+  return {
+    shape: (x, y, z) => Math.min(...fields.map((f) => f(x, y, z))),
+    sdf: (x, y, z) => Math.max(Math.min(...fields.map((f) => f(x, y, z))), -z),
+    material: (x, y, z) => {
+      let best = 0, d = 1e9;
+      fields.forEach((f, i) => { const v = f(x, y, z); if (v < d) { d = v; best = i; } });
+      if (best === Q_BOARD && z > 0.06 && z < T - 0.02 && (z % 0.17) < 0.014) return Q_BATTEN; // the gaps between the boards
+      if (best === Q_PACKING && hash(Math.floor(x * 90), Math.floor(y * 90 + z * 40)) < 0.25) return Q_BOARD; // darker stalks in it
+      return best;
+    },
+  };
+}
+
+function makeEquipment() {
+  const model = equipmentModel();
+  const img = renderBody(model.sdf, {
+    W: EQUIP_W, H: EQUIP_H, anchor: EQUIP_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: EQUIP_YAW,
+    camDist: 5.5, focusZ: 0.9, ramps: EQUIP_RAMPS, material: model.material, outline: [10, 7, 5], bound: [0.6, 1.1],
+  });
+  const sh = new Sheet(EQUIP_W, EQUIP_H);
+  sh.blit(img, EQUIP_W, EQUIP_H, 0, 0);
+  save(sh, 'equipment.png');
+  const shadow = renderShadow(model.shape, {
+    W: EQUIP_SHADOW_W, H: EQUIP_SHADOW_H, anchor: EQUIP_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: EQUIP_YAW,
+    camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55,
+  });
+  const ss = new Sheet(EQUIP_SHADOW_W, EQUIP_SHADOW_H);
+  ss.blit(shadow, EQUIP_SHADOW_W, EQUIP_SHADOW_H, 0, 0);
+  save(ss, 'equipment_shadow.png');
+  return {
+    image: 'equipment.png', frame: [EQUIP_W, EQUIP_H], anchor: EQUIP_ANCHOR,
+    shadow: { image: 'equipment_shadow.png', frame: [EQUIP_SHADOW_W, EQUIP_SHADOW_H], anchor: EQUIP_SHADOW_ANCHOR },
+  };
+}
+
+// ---------- By the fellow's crate: a desert well, a ring of rough stones round a dark hole ----------
+
+const WELL_W = 84, WELL_H = 80, WELL_ANCHOR = [42, 46];
+const WELL_SHADOW_W = 130, WELL_SHADOW_H = 100, WELL_SHADOW_ANCHOR = [65, 50];
+const WELL_RAMPS = [
+  ramp('#1c150d', '#2e2316', '#423220', '#57432b', '#6d5537', '#836844', '#997c53', '#ae9163'), // sandstone
+  ramp('#141210', '#211e1a', '#302c26', '#403a33', '#514a41', '#635b50', '#766d60', '#898071'), // grey stone
+  ramp('#1d0f08', '#2f190d', '#432413', '#583019', '#6d3d20', '#834b28', '#985a31', '#ad6a3b'), // red stone
+  ramp('#000000', '#030303', '#060607', '#0a0a0b', '#0e0e10', '#131315', '#18181b', '#1e1e21'), // the hole: dark down there
+  ramp('#020407', '#04080d', '#060c14', '#09121c', '#0d1925', '#12212f', '#182b3b', '#203749'), // a little water at its bottom
+];
+const [W_SAND, W_GREY, W_RED, W_HOLE, W_WATER] = [0, 1, 2, 3, 4];
+const WELL_R = 0.62, WELL_COURSES = 4; // meters: its stones' ring (their middles); how many courses high
+
+// Model space, meters: courses of rough stones round its middle, each course's set over the gaps of the
+// one under it, a few bigger ones on top; inside, a dark hole, water glinting at the bottom; a few
+// stones fallen off lying on the sand
+function wellModel() {
+  const parts = WELL_RAMPS.map(() => []);
+  const r = rng(17), kinds = [W_SAND, W_SAND, W_GREY, W_RED];
+  const stone = (a, rad, z, h) => {
+    const t = [-Math.sin(a), Math.cos(a), 0], n = [Math.cos(a), Math.sin(a), 0];
+    parts[kinds[Math.floor(r() * kinds.length)]].push(box([n[0] * rad, n[1] * rad, z], [n, t, [0, 0, 1]], h, 0.035));
+  };
+  for (let c = 0; c < WELL_COURSES; c++) {
+    const n = 13, z = 0.09 + c * 0.16;
+    for (let k = 0; k < n; k++) {
+      const a = ((k + (c % 2) * 0.5 + (r() - 0.5) * 0.15) * Math.PI * 2) / n;
+      stone(a, WELL_R + (r() - 0.5) * 0.04, z + (r() - 0.5) * 0.02, [0.12 + r() * 0.03, 0.13 + r() * 0.04, 0.075 + r() * 0.015]);
+    }
+  }
+  for (let k = 0; k < 9; k++) stone(((k + r() * 0.3) * Math.PI * 2) / 9, WELL_R, 0.09 + WELL_COURSES * 0.16 - 0.03, [0.15, 0.19 + r() * 0.04, 0.06]); // (its top: flat capstones)
+  parts[W_HOLE].push(cone([0, 0, 0], [0, 0, 0.02], WELL_R - 0.08, WELL_R - 0.08)); // the hole (the ground inside: as dark as it is deep)
+  parts[W_WATER].push(ellipsoid([0.05, 0.08, 0.025], [0.3, 0.26, 0.012]));
+  for (const [x, y, a] of [[0.95, 0.35, 0.4], [-0.85, 0.55, 1.2], [0.6, -0.8, 2.0]]) parts[kinds[Math.floor(r() * 3)]].push(box([x, y, 0.06], flatTurn(a), [0.11, 0.09, 0.06], 0.035)); // fallen off
+  const fields = parts.map((prims) => bodySdf([{ k: 0.004, prims }], 0.004));
+  return {
+    shape: (x, y, z) => Math.min(...fields.map((f) => f(x, y, z))),
+    sdf: (x, y, z) => Math.max(Math.min(...fields.map((f) => f(x, y, z))), -z),
+    material: (x, y, z) => {
+      let best = 0, d = 1e9;
+      fields.forEach((f, i) => { const v = f(x, y, z); if (v < d) { d = v; best = i; } });
+      if (best === W_HOLE && Math.hypot(x, y) > WELL_R - 0.2 && z > 0.05) return W_HOLE; // (inner faces: in the dark)
+      if (best <= W_RED && Math.hypot(x, y) < WELL_R - 0.1) return W_HOLE; // the stones' insides, down the hole, in the dark
+      if (best <= W_RED && hash(Math.floor(x * 70), Math.floor(y * 70 + z * 50)) < 0.12) return W_GREY; // pits and lichen
+      return best;
+    },
+  };
+}
+
+function makeWell() {
+  const model = wellModel();
+  const img = renderBody(model.sdf, {
+    W: WELL_W, H: WELL_H, anchor: WELL_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+    camDist: 5.5, focusZ: 0.9, ramps: WELL_RAMPS, material: model.material, outline: [10, 7, 5], bound: [0.35, 1.25],
+  });
+  const sh = new Sheet(WELL_W, WELL_H);
+  sh.blit(img, WELL_W, WELL_H, 0, 0);
+  save(sh, 'well.png');
+  const shadow = renderShadow(model.shape, {
+    W: WELL_SHADOW_W, H: WELL_SHADOW_H, anchor: WELL_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+    camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55,
+  });
+  const ss = new Sheet(WELL_SHADOW_W, WELL_SHADOW_H);
+  ss.blit(shadow, WELL_SHADOW_W, WELL_SHADOW_H, 0, 0);
+  save(ss, 'well_shadow.png');
+  return {
+    image: 'well.png', frame: [WELL_W, WELL_H], anchor: WELL_ANCHOR,
+    shadow: { image: 'well_shadow.png', frame: [WELL_SHADOW_W, WELL_SHADOW_H], anchor: WELL_SHADOW_ANCHOR },
+  };
+}
+
+// ---------- Cacti: by the well, a tall one with its arms up and a squat round one; round the wreck, those and more ----------
+
+const CACTUS_RAMPS = [
+  ramp('#06110a', '#0b1c10', '#112818', '#183620', '#20452a', '#295535', '#336641', '#3f784e'), // its skin: a dull desert green
+  ramp('#030a05', '#061008', '#0a170c', '#0e1f11', '#132816', '#18311b', '#1e3a21', '#254428'), // the grooves down its ribs
+  ramp('#3a3326', '#544a38', '#6d614b', '#86785e', '#9e8f72', '#b5a687', '#ccbd9d', '#e1d3b4'), // spines, pale
+  ramp('#2a0816', '#460d24', '#641433', '#841c45', '#a32757', '#bf386b', '#d65182', '#ea6f9b'), // flowers
+];
+const [C_SKIN, C_GROOVE, C_SPINE, C_FLOWER] = [0, 1, 2, 3];
+const CACTUS_SHADOW_W = 110, CACTUS_SHADOW_H = 90, CACTUS_SHADOW_ANCHOR = [55, 45];
+// The kinds, by sprite name: frame, anchor, bound (the model's sphere: its middle's height, radius),
+// ribs round each stem (none: pads, speckled), turned (yaw)
+const CACTI = {
+  cactus: { W: 72, H: 84, anchor: [36, 62], bound: [0.85, 1.0], ribs: 10, yaw: 0.3 }, // tall, its arms up
+  cactus_small: { W: 48, H: 44, anchor: [24, 27], bound: [0.2, 0.5], ribs: 14, yaw: 0 }, // a squat round barrel
+  cactus_organ: { W: 72, H: 84, anchor: [36, 62], bound: [0.7, 0.95], ribs: 8, yaw: 0.5 }, // organ pipes: stems up from one root
+  cactus_pear: { W: 72, H: 76, anchor: [36, 52], bound: [0.45, 0.75], ribs: 0, yaw: 0.2 }, // prickly pear: flat pads, red fruit
+  cactus_cluster: { W: 60, H: 50, anchor: [30, 30], bound: [0.2, 0.6], ribs: 12, yaw: 0 }, // a clump of little barrels
+};
+
+// Model space, meters. Tall: a trunk, two arms bending up off it (one each side), a couple of flowers
+// on top. Small: a ribbed barrel, a crown of flowers. Organ: five stems of different heights up from a
+// root, leaning out a little, flowers on the tallest. Pear: flat oval pads, each off the one under it,
+// red fruit on their rims. Cluster: barrels big and little huddled together, a flower or two. Ribs:
+// grooves round each upright stem (by its angle round it), spines speckled on
+function cactusModel(kind) {
+  const parts = CACTUS_RAMPS.map(() => []);
+  const stems = []; // [x, y, z from, z to, r]: the upright stretches, for the ribs
+  if (kind === 'cactus') {
+    stems.push([0, 0, 0, 1.55, 0.14], [-0.34, 0.02, 0.72, 1.15, 0.09], [0.3, -0.03, 0.95, 1.3, 0.085]);
+    parts[C_SKIN].push(capsule([0, 0, 0], [0, 0, 1.55], 0.14));
+    parts[C_SKIN].push(capsule([-0.08, 0, 0.55], [-0.34, 0.02, 0.62], 0.085), capsule([-0.34, 0.02, 0.62], [-0.34, 0.02, 1.15], 0.09)); // the left arm
+    parts[C_SKIN].push(capsule([0.08, 0, 0.82], [0.3, -0.03, 0.88], 0.08), capsule([0.3, -0.03, 0.88], [0.3, -0.03, 1.3], 0.085)); // the right one, higher
+    parts[C_FLOWER].push(ellipsoid([0.04, 0.05, 1.68], [0.05, 0.05, 0.035]), ellipsoid([-0.06, -0.03, 1.66], [0.04, 0.04, 0.03]));
+  } else if (kind === 'cactus_small') {
+    stems.push([0, 0, 0, 0.42, 0.24]);
+    parts[C_SKIN].push(ellipsoid([0, 0, 0.2], [0.24, 0.24, 0.24]));
+    for (let k = 0; k < 5; k++) { const a = (k * Math.PI * 2) / 5; parts[C_FLOWER].push(ellipsoid([Math.cos(a) * 0.08, Math.sin(a) * 0.08, 0.43], [0.04, 0.04, 0.03])); }
+  } else if (kind === 'cactus_organ') {
+    parts[C_SKIN].push(ellipsoid([0, 0, 0.06], [0.22, 0.2, 0.12])); // the root they come up from
+    for (const [x, y, h, r] of [[0, 0, 1.35, 0.1], [-0.17, 0.05, 1.05, 0.09], [0.16, -0.04, 1.15, 0.09], [-0.06, -0.15, 0.85, 0.08], [0.1, 0.15, 0.7, 0.08]]) {
+      const tx = x * 1.35, ty = y * 1.35; // (its top, out a little)
+      stems.push([tx, ty, 0.3, h, r]);
+      parts[C_SKIN].push(capsule([x * 0.4, y * 0.4, 0.05], [x, y, 0.3], r), capsule([x, y, 0.3], [tx, ty, h], r));
+    }
+    parts[C_FLOWER].push(ellipsoid([0, 0, 1.47], [0.05, 0.05, 0.035]), ellipsoid([0.22, -0.05, 1.27], [0.04, 0.04, 0.03]));
+  } else if (kind === 'cactus_pear') {
+    // [its middle, its flat side's way, half its width, half its height]
+    const pads = [[[0, 0, 0.26], [0, 1, 0.1], 0.2, 0.26], [[-0.22, 0.02, 0.62], [0.25, 1, 0.1], 0.16, 0.21], [[0.2, -0.02, 0.58], [-0.3, 1, 0.05], 0.17, 0.22],
+      [[-0.32, 0.04, 0.93], [0.5, 1, 0], 0.12, 0.16], [[0.33, 0, 0.92], [-0.2, 1, 0.2], 0.13, 0.17], [[0.02, 0.12, 0.25], [0.9, 0.4, 0], 0.15, 0.2]];
+    for (const [c, way, w, h] of pads) {
+      const n = norm([way[0], way[1], 1.2]), up = norm(add([0, 0, 1], mul(n, -n[2]))), across = cross(up, n); // (leant back: their faces up to the sun, and to us)
+      parts[C_SKIN].push(box(c, [across, n, up], [w, 0.045, h], 0.045)); // (a flat box rounded off: an oval pad)
+      for (const k of [-0.6, 0.15, 0.7]) parts[C_FLOWER].push(ellipsoid(add(add(c, mul(up, h - 0.01)), mul(across, k * w)), [0.035, 0.035, 0.04])); // fruit on its rim
+    }
+  } else { // cactus_cluster
+    for (const [x, y, r] of [[0, 0, 0.2], [0.26, 0.1, 0.14], [-0.24, 0.12, 0.13], [0.06, -0.24, 0.12], [-0.12, -0.2, 0.09], [0.3, -0.16, 0.08], [-0.36, -0.06, 0.07]]) {
+      stems.push([x, y, 0, r * 1.7, r]);
+      parts[C_SKIN].push(ellipsoid([x, y, r * 0.8], [r, r, r * 0.9]));
+    }
+    parts[C_FLOWER].push(ellipsoid([0, 0, 0.36], [0.045, 0.045, 0.03]), ellipsoid([0.26, 0.1, 0.25], [0.035, 0.035, 0.025]));
+  }
+  const RIBS = CACTI[kind].ribs;
+  const fields = parts.map((prims) => (prims.length ? bodySdf([{ k: 0.04, prims }], 0.004) : () => 1e9));
+  return {
+    shape: (x, y, z) => Math.min(...fields.map((f) => f(x, y, z))),
+    sdf: (x, y, z) => Math.max(Math.min(...fields.map((f) => f(x, y, z))), -z),
+    material: (x, y, z) => {
+      let best = 0, d = 1e9;
+      fields.forEach((f, i) => { const v = f(x, y, z); if (v < d) { d = v; best = i; } });
+      if (best !== C_SKIN) return best;
+      if (!RIBS) return hash(Math.floor(x * 45), Math.floor(y * 45 + z * 45)) < 0.07 ? C_SPINE : C_SKIN; // (pads: spines speckled all over)
+      const stem = stems.find(([sx, sy, z0, z1, r]) => z >= z0 - 0.05 && z <= z1 + 0.05 && Math.hypot(x - sx, y - sy) < r + 0.03);
+      if (stem) {
+        const a = Math.atan2(y - stem[1], x - stem[0]) * RIBS / (Math.PI * 2);
+        if (Math.abs(a - Math.round(a)) < 0.16) return C_GROOVE; // a groove between two ribs
+        if (Math.abs(a - Math.round(a) - 0.5) < 0.08 || Math.abs(a - Math.round(a) + 0.5) < 0.08) // along a rib's edge: spines, every so often
+          if (hash(Math.floor(z * 40), Math.floor(a * 3)) < 0.45) return C_SPINE;
+      }
+      return C_SKIN;
+    },
+  };
+}
+
+function makeCactus(name) {
+  const model = cactusModel(name), { W, H, anchor, bound, yaw } = CACTI[name];
+  const img = renderBody(model.sdf, {
+    W, H, anchor, pxPerM: PX_PER_M, elev: ELEV, yaw,
+    camDist: 5.5, focusZ: 0.9, ramps: CACTUS_RAMPS, material: model.material, outline: [10, 7, 5], bound,
+  });
+  const sh = new Sheet(W, H);
+  sh.blit(img, W, H, 0, 0);
+  save(sh, `${name}.png`);
+  const shadow = renderShadow(model.shape, {
+    W: CACTUS_SHADOW_W, H: CACTUS_SHADOW_H, anchor: CACTUS_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw,
+    camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55,
+  });
+  const ss = new Sheet(CACTUS_SHADOW_W, CACTUS_SHADOW_H);
+  ss.blit(shadow, CACTUS_SHADOW_W, CACTUS_SHADOW_H, 0, 0);
+  save(ss, `${name}_shadow.png`);
+  return {
+    image: `${name}.png`, frame: [W, H], anchor,
+    shadow: { image: `${name}_shadow.png`, frame: [CACTUS_SHADOW_W, CACTUS_SHADOW_H], anchor: CACTUS_SHADOW_ANCHOR },
+  };
+}
+
+// ---------- Rocks: strewn over the sectors with the cacti, a few kinds ----------
+
+const ROCK_RAMPS = [
+  ramp('#141110', '#221d1a', '#332c27', '#463d36', '#5a4f46', '#6f6257', '#857669', '#9c8b7c'), // the stone: a warm grey-brown
+  ramp('#070605', '#0d0b0a', '#14110f', '#1b1714', '#231e1a', '#2b2520', '#342c26', '#3d342d'), // its cracks, the strata between its layers
+  ramp('#3a2f22', '#53442f', '#6c5a3e', '#86704e', '#9e875f', '#b59d72', '#cab387', '#dcc79c'), // sand dusted on it, pale specks
+];
+const [R_STONE, R_CRACK, R_DUST] = [0, 1, 2];
+const ROCK_SHADOW_W = 150, ROCK_SHADOW_H = 120, ROCK_SHADOW_ANCHOR = [75, 60];
+// The kinds, by sprite name: frame, anchor, bound (the model's sphere: its middle's height, radius), turned (yaw)
+const ROCKS = {
+  rock_boulder: { W: 100, H: 96, anchor: [50, 62], bound: [0.5, 1.2], yaw: 0.4 }, // a big lump, chipped flat here and there
+  rock_slab: { W: 104, H: 84, anchor: [52, 52], bound: [0.25, 1.2], yaw: -0.3 }, // a flat slab, tilted up at one end
+  rock_pile: { W: 84, H: 70, anchor: [42, 42], bound: [0.2, 0.9], yaw: 0.9 }, // a few stones heaped together
+  rock_spire: { W: 84, H: 136, anchor: [42, 104], bound: [0.9, 1.4], yaw: 0.2 }, // a tall jagged pillar, broken off at the top
+  rock_pair: { W: 136, H: 110, anchor: [68, 70], bound: [0.5, 1.5], yaw: -0.6 }, // two boulders leaning together, a stone by them
+};
+
+// Model space, meters. Each stone: an ellipsoid with chips cut off it (flat faces, at random: the same
+// every time), its surface a little rough; the kinds made of one or more of them. Strata run across
+// them, cracks and specks over them, sand dusted in their hollows near the ground
+function rockModel(kind) {
+  const r = rng(kind.length * 131 + kind.charCodeAt(5) * 7);
+  // A stone at c, half sizes h, chipped by n flat cuts (each in from its edge by up to a third)
+  const stone = (c, h, n) => {
+    const e = bodySdf([{ k: 0.01, prims: [ellipsoid(c, h)] }], 0.01), cuts = [];
+    for (let i = 0; i < n; i++) {
+      const a = r() * Math.PI * 2, el = (r() - 0.25) * 1.3, nv = [Math.cos(el) * Math.cos(a), Math.cos(el) * Math.sin(a), Math.sin(el)];
+      const reach = Math.hypot(nv[0] * h[0], nv[1] * h[1], nv[2] * h[2]) * (0.55 + r() * 0.25);
+      cuts.push([nv, reach]);
+    }
+    return (x, y, z) => Math.max(e(x, y, z), ...cuts.map(([[nx, ny, nz], k]) => (x - c[0]) * nx + (y - c[1]) * ny + (z - c[2]) * nz - k));
+  };
+  const stones = {
+    rock_boulder: () => [stone([0, 0, 0.42], [0.9, 0.75, 0.68], 9), stone([0.8, 0.45, 0.08], [0.22, 0.18, 0.14], 4)],
+    rock_slab: () => [stone([0, 0, 0.22], [0.95, 0.6, 0.24], 7), stone([-0.55, -0.2, 0.42], [0.45, 0.45, 0.22], 5), stone([0.85, 0.5, 0.05], [0.18, 0.14, 0.1], 3)],
+    rock_pile: () => [stone([0, 0, 0.2], [0.38, 0.32, 0.28], 6), stone([0.35, 0.18, 0.12], [0.26, 0.22, 0.18], 5), stone([-0.3, 0.2, 0.1], [0.24, 0.2, 0.15], 5), stone([0.05, -0.32, 0.1], [0.22, 0.2, 0.14], 4), stone([0.1, 0.05, 0.45], [0.2, 0.18, 0.14], 4)],
+    rock_spire: () => [stone([0, 0, 0.9], [0.42, 0.38, 1.25], 10), stone([0.2, 0.15, 0.25], [0.55, 0.5, 0.4], 6), stone([-0.45, 0.3, 0.08], [0.18, 0.16, 0.12], 3)],
+    rock_pair: () => [stone([-0.45, 0, 0.5], [0.75, 0.65, 0.78], 8), stone([0.55, 0.1, 0.38], [0.65, 0.6, 0.55], 8), stone([0.2, 0.75, 0.1], [0.25, 0.2, 0.15], 4)],
+  }[kind]();
+  const rough = (x, y, z) => 0.022 * (Math.sin(x * 13 + y * 7) * Math.sin(y * 11 - z * 9) + 0.5 * Math.sin(z * 17 + x * 5));
+  const shape = (x, y, z) => 0.8 * (Math.min(...stones.map((f) => f(x, y, z))) + rough(x, y, z));
+  const frac = (n) => n - Math.floor(n);
+  return {
+    shape,
+    sdf: (x, y, z) => Math.max(shape(x, y, z), -z),
+    material: (x, y, z) => {
+      if (z < 0.12 && hash(Math.floor(x * 20), Math.floor(y * 20)) < 0.6) return R_DUST; // sand dusted round its foot
+      const band = z * 3.5 + 0.4 * Math.sin(x * 2.3 + y * 1.7);
+      if (frac(band) < 0.05) return R_CRACK; // the strata
+      const n = hash(Math.floor(x * 24), Math.floor((y + z) * 24));
+      if (n < 0.025) return R_CRACK; // cracks, pits
+      if (n > 0.95) return R_DUST; // pale specks
+      return R_STONE;
+    },
+  };
+}
+
+function makeRock(name) {
+  const model = rockModel(name), { W, H, anchor, bound, yaw } = ROCKS[name];
+  const img = renderBody(model.sdf, {
+    W, H, anchor, pxPerM: PX_PER_M, elev: ELEV, yaw,
+    camDist: 5.5, focusZ: 0.9, ramps: ROCK_RAMPS, material: model.material, outline: [8, 7, 6], bound,
+  });
+  const sh = new Sheet(W, H);
+  sh.blit(img, W, H, 0, 0);
+  save(sh, `${name}.png`);
+  const shadow = renderShadow(model.shape, {
+    W: ROCK_SHADOW_W, H: ROCK_SHADOW_H, anchor: ROCK_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw,
+    camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55,
+  });
+  const ss = new Sheet(ROCK_SHADOW_W, ROCK_SHADOW_H);
+  ss.blit(shadow, ROCK_SHADOW_W, ROCK_SHADOW_H, 0, 0);
+  save(ss, `${name}_shadow.png`);
+  return {
+    image: `${name}.png`, frame: [W, H], anchor,
+    shadow: { image: `${name}_shadow.png`, frame: [ROCK_SHADOW_W, ROCK_SHADOW_H], anchor: ROCK_SHADOW_ANCHOR },
+  };
+}
+
+// ---------- Cracks in the ground, acid down in them, its reek rising (see FISSURE_KINDS) ----------
+
+const ACID = { // [deep, rim, sheen], and its reek's color
+  green: [[[46, 96, 24], [72, 140, 36], [128, 196, 64]], [110, 180, 70]],
+  yellow: [[[152, 128, 20], [196, 170, 36], [240, 222, 80]], [200, 180, 60]],
+};
+
+// A decal, flat on the ground: each crack a jagged crevice (as wide as it is there, its edges ragged),
+// its far wall going down, broken earth lit by the moon, darker deeper, lit low down by the acid at its
+// bottom (bubbles, a sheen on it); a broken lip round it, dithered into the ground; hairline cracks off
+// it, and a faint glow of the acid round it
+function fissureDecal(kind, W, H, anchor) {
+  const { acid, paths } = FISSURE_KINDS[kind], [[deep, rim, shine]] = ACID[acid];
+  const c = new Uint8ClampedArray(W * H * 4), se = Math.sin(ELEV);
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  // The nearest crack to (x, y): how far, how wide it is there, which side (north of it: its far wall, seen)
+  const nearest = (x, y) => {
+    let best = { d: 1e9, w: 0, side: 0 };
+    for (const [w, pts] of paths) {
+      if (pts.length < 2) {
+        const d = Math.hypot(x - pts[0][0], y - pts[0][1]);
+        if (d - w < best.d - best.w) best = { d, w, side: y - pts[0][1] };
+        continue;
+      }
+      const lens = pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1])), total = lens.reduce((a, b) => a + b, 0);
+      let run = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[i + 1], dx = bx - ax, dy = by - ay, k = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
+        const px = ax + dx * k, py = ay + dy * k, d = Math.hypot(x - px, y - py), wt = fissureWidth(w, pts, (run + k * lens[i]) / total);
+        if (d - wt < best.d - best.w) best = { d, w: wt, side: y - py };
+        run += lens[i];
+      }
+    }
+    return best;
+  };
+  for (let py = 0; py < H; py++)
+    for (let px = 0; px < W; px++) {
+      const gx = (px + 0.5 - anchor[0]) / PX_PER_M, gy = (py + 0.5 - anchor[1]) / (PX_PER_M * se);
+      const th = (BAYER4[(py % 4) * 4 + (px % 4)] + 0.5) / 16, n = hash(px, py), at = (py * W + px) * 4;
+      const { d: d0, w, side } = nearest(gx, gy);
+      const d = d0 + 0.05 * Math.sin(gx * 13 + gy * 7) + 0.03 * Math.sin(gx * 29 - gy * 23) + (hash(px >> 1, py >> 1) - 0.5) * 0.04; // (ragged)
+      const k = d / w; // (0: its middle; 1: its edge)
+      if (k < 0.3) { // the acid down at its bottom
+        const swirl = Math.sin(gx * 6.1 + Math.sin(gy * 7.3 + gx) * 1.8) + (th - 0.5) * 0.6;
+        const bub = hash(Math.floor(gx * 12 + 90), Math.floor(gy * 12 + 90)) > 0.9 && th > 0.5;
+        const col = bub || swirl > 1.25 ? shine : mix(deep, rim, Math.max(0, 0.7 - k * 1.3) + (swirl > 0.4 ? 0.25 : 0));
+        c.set([...col, 255], at);
+        continue;
+      }
+      if (k < 1) { // its walls: the far one seen going down (lit, darker deeper), the near one hardly (it faces away)
+        const down = 1 - (k - 0.3) / 0.7, far = side < 0;
+        const lit = far ? 0.75 - down * 0.45 : 0.32 - down * 0.15, band = hash(Math.floor(down * 4 + 7), Math.floor(gx * 6 + 40)) > 0.75 ? 0.6 : 1;
+        let col = (n > 0.5 ? [74, 60, 50] : [64, 52, 44]).map((v) => v * Math.round(lit * band * 6) / 6);
+        col = mix(col, rim, Math.round(Math.max(0, down - 0.45) * 1.4 * 4) / 4 * 0.6); // (the acid's light, low down)
+        c.set([...col.map(Math.round), 255], at);
+        continue;
+      }
+      const u = (d - w) / 0.14; // its lip: broken earth round it, dithered into the ground
+      if (u < 1) {
+        if (u > 0.6 && th > (1 - u) / 0.4 + 0.15) continue;
+        const col = (n > 0.5 ? [80, 70, 62] : [70, 62, 55]).map((v) => Math.round(v * (u < 0.2 ? 0.4 : side < 0 ? 0.8 : 1)));
+        c.set([...col, 255], at);
+        continue;
+      }
+      // Hairline cracks off it, near it; the acid's glow round it, faint, dithered
+      const hair = d - w < 0.7 && Math.abs(Math.sin(gx * 5.3 + Math.sin(gy * 4.1) * 2.2) * Math.sin(gy * 6.7 - gx * 1.3)) < 0.035 && hash(Math.floor(gx * 4 + 30), Math.floor(gy * 4 + 30)) > 0.45;
+      if (hair) { c.set([28, 24, 22, 190], at); continue; }
+      const glow = Math.max(0, 1 - (d - w) / 0.9);
+      if (glow > 0 && th < glow * 0.55) c.set([...rim, Math.round(70 * glow)], at);
+    }
+  return c;
+}
+
+function makeFissure(kind) {
+  const pts = FISSURE_KINDS[kind].paths.flatMap(([w, p]) => p.map(([x, y]) => [x, y, w])), se = Math.sin(ELEV);
+  const x0 = Math.min(...pts.map(([x, , w]) => x - w)) - 1, x1 = Math.max(...pts.map(([x, , w]) => x + w)) + 1;
+  const y0 = Math.min(...pts.map(([, y, w]) => y - w)) - 1, y1 = Math.max(...pts.map(([, y, w]) => y + w)) + 1;
+  const W = Math.ceil((x1 - x0) * PX_PER_M), H = Math.ceil((y1 - y0) * PX_PER_M * se), anchor = [Math.round(-x0 * PX_PER_M), Math.round(-y0 * PX_PER_M * se)];
+  const sh = new Sheet(W, H);
+  sh.blit(fissureDecal(kind, W, H, anchor), W, H, 0, 0);
+  save(sh, `${kind}.png`);
+  // Its reek: off the acid along it, a few places (meters, model space), in its own color
+  const reek = fissurePoints(kind, 0.9).filter((p) => p.w > 0.12).map((p) => [p.x, p.y, 0]);
+  return { image: `${kind}.png`, frame: [W, H], anchor, reek, reekColor: ACID[FISSURE_KINDS[kind].acid][1] };
+}
+
+// ---------- Cargo containers by the wreck, thrown out of it: buried deep in the sand, tipped (see CONTAINER_KINDS) ----------
+
+const CONTAINER_W = 150, CONTAINER_H = 120, CONTAINER_ANCHOR = [75, 66];
+const CONTAINER_SHADOW_W = 190, CONTAINER_SHADOW_H = 140, CONTAINER_SHADOW_ANCHOR = [95, 70];
+const CONTAINER_PAINT = {
+  orange: ramp('#2a1206', '#45200b', '#673010', '#8a4214', '#ad5619', '#cc6c22', '#e3872f', '#f2a54a'),
+  white: ramp('#1d2024', '#2e3237', '#454a50', '#5f656b', '#7c8288', '#9aa0a5', '#b9bdc1', '#d6d9db'),
+  teal: ramp('#071014', '#0c1a20', '#12262e', '#18333c', '#20414b', '#29505b', '#33606c', '#3f717d'),
+};
+const CONTAINER_FRAME = ramp('#07080a', '#0e1013', '#15181c', '#1d2126', '#262b31', '#30363d', '#3b424a', '#48505a'); // its frame, dark
+const CONTAINER_RUST = ramp('#1a0d06', '#2c160a', '#40200e', '#552b13', '#6b3718', '#82441e', '#995226', '#b0612f');
+const [CT_PAINT, CT_GROOVE, CT_FRAME, CT_RUST] = [0, 1, 2, 3];
+
+// Model space, meters, its middle at the origin, its length along x: a long box (3 m by 1.2 by 1.2),
+// tipped (pitch: its +x end down; roll), sunk to zc; its sides corrugated (grooves across), a dark frame
+// along its edges, the doors at its back end (their bars), rust; sand drifted up round it (the ground's own: cut out of it)
+function containerModel(k) {
+  const { pitch, roll, zc } = k, frac = (n) => ((n % 1) + 1) % 1;
+  const cp = Math.cos(pitch), sp = Math.sin(pitch), cr = Math.cos(roll), sr = Math.sin(roll);
+  const axes = [[cp, 0, -sp], [sp * sr, cr, cp * sr], [sp * cr, -sr, cp * cr]]; // (its own x, y, z, tipped)
+  const local = (x, y, z) => axes.map((a) => x * a[0] + y * a[1] + (z - zc) * a[2]);
+  const shell = bodySdf([{ k: 0.01, prims: [box([0, 0, zc], axes, [1.5, 0.6, 0.6], 0.04)] }], 0.01);
+  // The sand over it (meters up, where it is): drifted up against it all round, wavy; everything under it
+  // cut out of the sprite, so the ground's own sand shows there
+  const sandAt = (x, y) => {
+    const out = Math.hypot(Math.max(0, Math.abs(x) - 1.3), Math.max(0, Math.abs(y) - 0.45));
+    return 0.22 * Math.exp(-((out / 0.5) ** 2)) * (0.7 + 0.3 * Math.sin(x * 2.3 + y * 1.7)) + 0.04 * Math.sin(x * 5.3 - y * 4.1);
+  };
+  const shape = (x, y, z) => Math.max(shell(x, y, z), sandAt(x, y) - z);
+  return {
+    shape,
+    sdf: (x, y, z) => Math.max(shape(x, y, z), -z),
+    material: (x, y, z) => {
+      const [lx, ly, lz] = local(x, y, z), n = hash(Math.floor(lx * 9 + 40), Math.floor((ly + lz) * 9 + 40));
+      if (Math.abs(lx) > 1.42 || (Math.abs(ly) > 0.52 && Math.abs(lz) > 0.52)) return n > 0.7 ? CT_RUST : CT_FRAME; // the frame round its ends and along its edges
+      if (lx < -1.38) return Math.abs(frac(ly / 0.3) - 0.5) < 0.08 ? CT_FRAME : CT_PAINT; // (its doors' bars)
+      if (z < 0.18 && n > 0.45) return CT_RUST; // rust where it's in the sand
+      if (n > 0.93) return CT_RUST; // rust spots
+      if (frac(lx / 0.2) < 0.35) return CT_GROOVE; // the corrugation, across its sides
+      return CT_PAINT;
+    },
+  };
+}
+
+function makeContainer(name) {
+  const k = CONTAINER_KINDS[name], model = containerModel(k), paint = CONTAINER_PAINT[k.paint];
+  const ramps = [paint, [paint[0], ...paint.slice(0, 7)], CONTAINER_FRAME, CONTAINER_RUST]; // (the grooves a shade darker)
+  const img = renderBody(model.sdf, {
+    W: CONTAINER_W, H: CONTAINER_H, anchor: CONTAINER_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: k.yaw,
+    camDist: 5.5, focusZ: 0.9, ramps, material: model.material, outline: [8, 7, 6], bound: [0.3, 2.2],
+  });
+  const sh = new Sheet(CONTAINER_W, CONTAINER_H);
+  sh.blit(img, CONTAINER_W, CONTAINER_H, 0, 0);
+  save(sh, `${name}.png`);
+  const shadow = renderShadow(model.shape, {
+    W: CONTAINER_SHADOW_W, H: CONTAINER_SHADOW_H, anchor: CONTAINER_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: k.yaw,
+    camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55,
+  });
+  const ss = new Sheet(CONTAINER_SHADOW_W, CONTAINER_SHADOW_H);
+  ss.blit(shadow, CONTAINER_SHADOW_W, CONTAINER_SHADOW_H, 0, 0);
+  save(ss, `${name}_shadow.png`);
+  return {
+    image: `${name}.png`, frame: [CONTAINER_W, CONTAINER_H], anchor: CONTAINER_ANCHOR,
+    shadow: { image: `${name}_shadow.png`, frame: [CONTAINER_SHADOW_W, CONTAINER_SHADOW_H], anchor: CONTAINER_SHADOW_ANCHOR },
+  };
+}
+
+// ---------- Near the equator: a big white ship's wreck, broken in two (see WRECK_ROCKET, WRECK_PIECES) ----------
+
+const WRECK_RAMPS = [
+  ramp('#1d2024', '#2e3237', '#454a50', '#5f656b', '#7c8288', '#9aa0a5', '#b9bdc1', '#d6d9db'), // white plating (the escape pod's)
+  ramp('#07080a', '#0e1013', '#15181c', '#1d2126', '#262b31', '#30363d', '#3b424a', '#48505a'), // dark hardware: seams, the engine's rings, the decks
+  ramp('#050403', '#0a0807', '#110e0c', '#191512', '#221d19', '#2c2620', '#373028', '#423a31'), // scorched, burnt through
+  ramp('#1a0d06', '#2c160a', '#40200e', '#552b13', '#6b3718', '#82441e', '#995226', '#b0612f'), // rust: its ribs, paint worn off
+  ramp('#0d0b0a', '#18140f', '#241d16', '#30271d', '#3d3125', '#4b3c2e', '#5a4938', '#6a5643'), // soot
+  ramp('#2a1206', '#45200b', '#673010', '#8a4214', '#ad5619', '#cc6c22', '#e3872f', '#f2a54a'), // orange (the pod's hatch's): its paint, the hatch's frame
+  ramp('#000000', '#030303', '#060607', '#0a0a0b', '#0e0e10', '#131315', '#18181b', '#1e1e21'), // inside: dark
+  ramp('#0d1210', '#16201c', '#1f2e28', '#293d35', '#334c42', '#3e5c50', '#4a6d5e', '#577e6d'), // pipes and conduits: dull green
+];
+const [K_WHITE, K_BODY, K_CHAR, K_RUST, K_SOOT, K_TRIM, K_DARK, K_PIPE] = [0, 1, 2, 3, 4, 5, 6, 7];
+
+// Model space, meters, the piece's middle at the origin, along x (the ship's own x less its middle):
+// its stretch of the ship (WRECK_ROCKET), the rest torn off ragged at its broken end. The ship: a long
+// round hull, hollow (its plating a hand thick: at the break and through the holes torn in it its
+// insides show, rings of ribs, pipes along its walls, the sand under it), white plating in panels, its orange paint
+// worn off in big patches, rust under it; its back end a big round engine face (a thick rim, rings
+// inside it, vents round between them, a hub with a dark hole in the middle); its front narrowing to a
+// rounded end, crumpled; a round hatch in its side, open, a thick orange frame round the dark doorway
+// (the pod's); a few boxes of hardware on it (antennas, if it has them); all of it buried deep, sand
+// drifted up its sides (the ground's own: cut out of it), its front sunk deeper the nearer its tip, under the sand
+function wreckPieceModel(p) {
+  const { R, zc, body: [b0, b1], tip, noseR, hatch: [px, pa], holes, antennas, boxes, noseSink: [s0, sDeep] } = WRECK_ROCKET;
+  const mid = (p.from + p.to) / 2, T = 0.1, frac = (n) => ((n % 1) + 1) % 1;
+  const one = (prims, k = 0.004) => bodySdf([{ k, prims }], k);
+  const hullOut = one([cone([b0, 0, zc], [b1, 0, zc], R, R * 0.97), capsule([b1, 0, zc], [tip - noseR, 0, zc - 0.25], R * 0.97, noseR)], 0.05);
+  // The hatch: round, in its side (round it at pa), its doorway cut through the plating, a thick orange frame round it
+  const pd = [0, Math.cos(pa), Math.sin(pa)], at = (k) => [px, pd[1] * k, zc + pd[2] * k];
+  const doorway = one([cone(at(R - 0.5), at(R + 0.3), 0.46, 0.46)]);
+  const frameRing = one([cone(at(R - 0.15), at(R + 0.1), 0.67, 0.62)], 0.02);
+  const hatchFrame = (x, y, z) => Math.max(frameRing(x, y, z), -doorway(x, y, z));
+  // Holes torn in its top: [where along it, half how long], ragged
+  const hole = (x, y, z) => Math.min(...holes.map(([hx, hw]) => Math.max(Math.abs(x - hx) - hw * (1 + 0.35 * Math.sin(y * 4.5 + hx)), zc + R * 0.75 - z))); // (< 0: torn out)
+  const shell = (x, y, z) => Math.max(hullOut(x, y, z), -(hullOut(x, y, z) + T), -doorway(x, y, z), -hole(x, y, z));
+  const floor = Math.max(zc - R * 0.55, 0.12); // (above the sand)
+  const ribs = (x, y, z) => Math.max(Math.abs(frac(x / 1) - 0.5) * 1 - 0.07, hullOut(x, y, z), -(hullOut(x, y, z) + T + 0.18));
+  const pipeLine = one([capsule([b0, R - 0.4, zc + 0.5], [b1, R - 0.4, zc + 0.5], 0.08), capsule([b0, -R + 0.4, zc + 0.5], [b1, -R + 0.4, zc + 0.5], 0.08),
+    capsule([b0, 0.5, floor + 0.18], [b1, 0.5, floor + 0.18], 0.06), capsule([b0, -0.6, zc + 0.95], [b1, -0.6, zc + 0.95], 0.07)]);
+  const pipes = (x, y, z) => Math.max(pipeLine(x, y, z), hullOut(x, y, z));
+  // The engine face at its back end: a thick rim sticking out back, sunk inside it, a hub with its hole
+  const rim = (x, y, z) => Math.max(one([cone([b0 + 0.35, 0, zc], [b0 - 0.45, 0, zc], R * 1.1, R * 1.02)], 0.06)(x, y, z), -one([cone([b0 + 0.05, 0, zc], [b0 - 0.6, 0, zc], R * 0.72, R * 0.72)])(x, y, z));
+  const hub = (x, y, z) => Math.max(one([cone([b0, 0, zc], [b0 - 0.35, 0, zc], R * 0.42, R * 0.32)], 0.04)(x, y, z), -one([cone([b0 + 0.2, 0, zc], [b0 - 0.5, 0, zc], R * 0.17, R * 0.17)])(x, y, z));
+  const hubHole = one([ellipsoid([b0 - 0.05, 0, zc], [0.05, R * 0.17, R * 0.17])]);
+  // Up off its top: antennas [where along it, how tall] leaning back a little, a dish on the first; boxes [where along it, round it, half its size]
+  const up = (a, k) => [0, Math.cos(a) * k, zc + Math.sin(a) * k];
+  const masts = one(antennas.flatMap(([ax, h], i) => [capsule([ax, 0.25 * i, zc + R - 0.1], [ax - 0.4, 0.25 * i + 0.2, zc + R + h], 0.06, 0.03), capsule([ax - 0.2, 0.25 * i - 0.25, zc + R + h * 0.6], [ax - 0.2, 0.25 * i + 0.45, zc + R + h * 0.62], 0.025)]));
+  const dish = one(antennas.length ? [ellipsoid([antennas[0][0] - 0.45, 0.2, zc + R + antennas[0][1] + 0.1], [0.32, 0.32, 0.1])] : []);
+  const gear = one(boxes.map(([bx, ba, h]) => { const q = up(ba, R + h * 0.5); return box([bx, q[1], q[2]], [[1, 0, 0], [0, Math.sin(ba), -Math.cos(ba)], [0, Math.cos(ba), Math.sin(ba)]], [h * 1.6, h, h], 0.04); }));
+  const parts = [[shell, K_WHITE], [ribs, K_RUST], [pipes, K_PIPE], [hatchFrame, K_TRIM], [rim, K_WHITE], [hub, K_BODY], [hubHole, K_DARK], [masts, K_BODY], [dish, K_WHITE], [gear, K_BODY]];
+  // This piece of it: the rest torn off at its broken end, ragged
+  const jag = (y, z) => 0.28 * Math.sin(y * 3 + z * 2.6) + 0.14 * Math.sin(y * 10.5 - z * 7.3);
+  const brk = p.open > 0 ? p.to : p.from;
+  const cut = (x, y, z) => p.open * (x - brk) + jag(y, z); // (> 0: torn off)
+  const fields = parts.map(([f, m]) => [(x, y, z) => Math.max(f(x, y, z), cut(x, y, z)), m, f]);
+  const cr = Math.cos(p.roll), sr = Math.sin(p.roll);
+  // Its front sinks deeper the nearer its tip (sDeep down at it, from s0 on), into the sand
+  const sink = (x) => (x > s0 ? (sDeep * (x - s0)) / (tip - s0) : 0);
+  const toShip = (x, y, z) => [x + mid, y * cr - (z - zc) * sr, zc + y * sr + (z - zc) * cr + sink(x + mid)]; // (turned round its axis, sunk)
+  // The sand over it (meters up, where it is): drifted up against its sides, and over its front, higher the
+  // nearer its tip; everything under it is cut out of the sprite, so the ground's own sand shows there
+  const side = Math.sqrt(Math.max(0.1, R * R - zc * zc)); // (how wide it is where it goes into the ground)
+  const sandAt = (x, y) => {
+    const X = x + mid, wave = 0.06 * Math.sin(X * 1.7 + y * 2.3) + 0.04 * Math.sin(X * 4.1 - y * 3.7);
+    const drift = 0.32 * Math.exp(-(((Math.abs(y) - side * 0.8) / 0.55) ** 2)) * (0.75 + 0.25 * Math.sin(X * 0.9 + y));
+    const over = X > s0 + 3 ? 0.7 * ((X - s0 - 3) / (tip - s0 - 3)) : 0; // (over its very front)
+    return Math.max(drift, over) + wave;
+  };
+  const shape = (x, y, z) => { const q = toShip(x, y, z); return Math.max(Math.min(...fields.map(([f]) => f(...q))), sandAt(x, y) - z); };
+  // Its orange paint, in big patches worn through to the white (and rust at their edges)
+  const paint = (x, round) => Math.sin(x * 0.8 + round * 1.7) + Math.sin(x * 0.34 - round * 2.9 + 1.3) + 0.6 * Math.sin(x * 1.9 + round * 4.1 + 2.1);
+  return {
+    shape,
+    sdf: (x, y, z) => Math.max(shape(x, y, z), -z),
+    material: (x0, y0, z0) => {
+      const [x, y, z] = toShip(x0, y0, z0);
+      let best = K_WHITE, d = 1e9, part = null;
+      for (const [f, m, raw] of fields) { const v = f(x, y, z); if (v < d) { d = v; best = m; part = raw; } }
+      const n = hash(Math.floor(x * 7), Math.floor((y + z) * 7)), round = Math.atan2(z - zc, y), rr = Math.hypot(y, z - zc); // (where round it, how far out)
+      if (best === K_RUST) return n > 0.75 ? K_CHAR : K_RUST;
+      if (part === rim) { // the engine's face: the rim white, rings and vents inside it
+        if (rr < R * 0.76) return frac((round * 16) / (Math.PI * 2)) < 0.45 ? K_DARK : K_BODY; // vents round, sunk
+        if (Math.abs(rr - R * 0.84) < 0.06 || Math.abs(rr - R * 0.95) < 0.04 || (x > b0 && x < b0 + 0.12)) return K_BODY; // its rings
+        return n > 0.8 ? K_SOOT : K_WHITE;
+      }
+      if (part === hub) return Math.abs(rr - R * 0.3) < 0.05 ? K_TRIM : K_BODY; // (an orange ring round it)
+      if (part === dish) return K_WHITE;
+      if (best !== K_WHITE) return best;
+      if (hullOut(x, y, z) < -0.05) return n > 0.6 ? K_CHAR : K_DARK; // its plating's inside face, in the dark
+      if (cut(x, y, z) > -0.35 - 0.35 * n || hole(x, y, z) < 0.18 + 0.2 * n) return n > 0.5 ? K_DARK : K_CHAR; // burnt black round where it's torn
+      if (x < b1 ? frac(x / 1.1) < 0.035 || frac((round * 8) / (Math.PI * 2)) < 0.018 : frac(x / 1.3) < 0.03) return K_BODY; // its panels' seams
+      const v = paint(x, round);
+      if (v > 1.15) return n > 0.85 ? K_RUST : K_TRIM; // its orange paint
+      if (v > 0.95) return n > 0.4 ? K_RUST : K_TRIM; // worn at its edges, rust showing
+      const m = hash(Math.floor(x * 2) + 11, Math.floor(round * 6)) + 0.6 * hash(Math.floor(x * 7), Math.floor(z * 7) + 5);
+      if (m > 1.5) return K_SOOT; // scorch marks
+      if (z0 < 0.3 && n > 0.75) return K_RUST; // rusting where it's down in the sand
+      return K_WHITE;
+    },
+  };
+}
+
+// A piece's frame: wide and tall enough for it turned as it lies, up to its top (and its anchor, its
+// middle on the ground)
+function wreckFrame(p) {
+  const ex = (p.to - p.from) / 2 + 1.5, ey = WRECK_ROCKET.R + 1, c = Math.abs(Math.cos(p.yaw)), s = Math.abs(Math.sin(p.yaw));
+  const wx = c * ex + s * ey, wy = s * ex + c * ey, deep = wy * Math.sin(ELEV) * PX_PER_M;
+  const W = Math.ceil(2 * wx * PX_PER_M) + 16, up = Math.ceil(deep + p.top * Math.cos(ELEV) * PX_PER_M) + 12;
+  return { W, H: up + Math.ceil(deep) + 12, anchor: [Math.round(W / 2), up], reach: Math.hypot(ex, ey, p.top) + 1 };
+}
+
+function makeWreckPiece(p) {
+  const model = wreckPieceModel(p), { W, H, anchor, reach } = wreckFrame(p);
+  const view = { pxPerM: PX_PER_M, elev: ELEV, yaw: p.yaw, camDist: 40, focusZ: 0.9 };
+  const img = renderBody(model.sdf, { W, H, anchor, ...view, ramps: WRECK_RAMPS, material: model.material, outline: [6, 7, 6], bound: [0.4, reach] });
+  const sh = new Sheet(W, H);
+  sh.blit(img, W, H, 0, 0);
+  save(sh, `${p.name}.png`);
+  const SW = W + 60, SH = H + 50, sAnchor = [anchor[0] + 30, anchor[1] + 25];
+  const shadow = renderShadow(model.shape, { W: SW, H: SH, anchor: sAnchor, ...view, light: SHADOW_LIGHT, alpha: 0.55, reach });
+  const ss = new Sheet(SW, SH);
+  ss.blit(shadow, SW, SH, 0, 0);
+  save(ss, `${p.name}_shadow.png`);
+  return {
+    image: `${p.name}.png`, frame: [W, H], anchor,
+    shadow: { image: `${p.name}_shadow.png`, frame: [SW, SH], anchor: sAnchor },
+  };
+}
 
 // ---------- The bedding thrown out with the bed: a burning mattress, a pillow, a plaid blanket ----------
 
@@ -2067,6 +3085,8 @@ const characters = {
   hero: await part('hero', () => makeHero('hero')),
   hero_pack: await part('hero_pack', () => makeHero('hero_pack', true)), // after finding the backpack
   bug: await part('bug', makeBug), // the creatures that come for him
+  mother: await part('mother', makeMother), // their queen, behind the wreck
+  raven: await part('raven', makeRaven), // in flocks, flying off as he comes
 };
 const objects = {
   pod: await part('pod', makePod), backpack: await part('backpack', makeBackpack), bed: await part('bed', makeBed),
@@ -2075,6 +3095,16 @@ const objects = {
   turret: await part('turret', makeTurret), // by its campfire
   garage: await part('garage', makeGarage), // over them
   fellow: await part('fellow', makeFellow), // by it
+  egg: await part('egg', makeEgg), // the huge thing, near the pole
+  egg_pit: await part('egg_pit', makeEggPit), // the pit left of it
+  equipment: await part('equipment', makeEquipment), // the fellow's, lost in the West
+  well: await part('well', makeWell), // by it
+  cactus: await part('cactus', () => makeCactus('cactus')), cactus_small: await part('cactus_small', () => makeCactus('cactus_small')), // by the well
+  cactus_organ: await part('cactus_organ', () => makeCactus('cactus_organ')), cactus_pear: await part('cactus_pear', () => makeCactus('cactus_pear')), cactus_cluster: await part('cactus_cluster', () => makeCactus('cactus_cluster')), // round the wreck too
+  ...Object.fromEntries(await Promise.all(Object.keys(ROCKS).map(async (k) => [k, await part(k, () => makeRock(k))]))), // strewn with the cacti
+  ...Object.fromEntries(await Promise.all(Object.keys(FISSURE_KINDS).map(async (k) => [k, await part(k, () => makeFissure(k))]))), // strewn with the cacti and rocks
+  ...Object.fromEntries(await Promise.all(Object.keys(CONTAINER_KINDS).map(async (k) => [k, await part(k, () => makeContainer(k))]))), // by the wreck
+  ...Object.fromEntries(await Promise.all(WRECK_PIECES.map(async (p) => [p.name, await part(p.name, () => makeWreckPiece(p))]))), // the ship's, near the equator, broken in two
   rocket: await part('rocket', makeRocket), crater: await part('crater', makeCrater), crater_small: await part('crater_small', makeSmallCrater),
 };
 // The rest comes from the existing manifest, read only now: runs for other parts (ONLY=hero and

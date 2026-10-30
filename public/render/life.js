@@ -6,9 +6,10 @@
 const LEN = 3, THICK = 2, GAP = 1; // px: a point's bar, long and thick; the gap after it (and between rings)
 const PERIOD = LEN + GAP;
 export const RING_STEP = THICK + GAP, RING_THICK = THICK; // px from one ring to the next; how thick one is
+export const BAR_LEN = LEN, BAR_PERIOD = PERIOD; // px: how long a bar is along its ring; from one to the next (the magazine's, in client.js, as these)
 const FADE = 2, FADING = 0.75; // the first FADE rows (rings) solid; each one out from them FADING as seen as the last
 const ROW = 25, BAR_FADING = 0.85; // over a bug or a thing: bars in a row (about as wide as a bug); its rows fading slower
-const fade = (row, k = FADING) => k ** Math.max(0, row - FADE + 1);
+export const fade = (row, k = FADING) => k ** Math.max(0, row - FADE + 1); // (the magazine's rows fade as the rings: see client.js)
 const LEFT = '#e0261c', LOST = 'rgba(255, 255, 255, 0.25)';
 
 // Over a bug or a thing: max bars in rows of ROW, the first's middle at screen (cx, y), the rest up from

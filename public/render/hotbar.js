@@ -2,7 +2,7 @@
 // use, in square slots side by side on one plate as a label's card turned on its side (rounded at the
 // top, its thick white edge along the bottom, a thin white line round it), a thick black border inside
 // that line, the same between them; each one's key out from under its bottom edge, as a label's key
-// comes out from under its card's (rounded where it's out, filled white while it's held): the medkit (1), the roll (Space), the knife and the gun (the mouse's buttons). A slot getting ready again is dark over what's left of the wait, going round
+// comes out from under its card's (rounded where it's out, filled white while it's held): the medkit (X), the roll (Space), the knife and the gun (the mouse's buttons). A slot getting ready again is dark over what's left of the wait, going round
 // clockwise from the top; a count in its bottom right corner (medkits left, rounds in the magazine).
 // A use flashes its slot. Over it, his experience: a thin gold bar as wide as it, filling to the next
 // level, his level by its left end; with a talent point to spend, in gold over it, what to press (T).

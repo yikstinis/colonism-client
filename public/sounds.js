@@ -2,7 +2,7 @@
 // small gun's sounds close up: a sharp crack (the muzzle blast's front, clipped hard) with a snap on
 // top, the blast's body, a low push under it, the gun's steel ringing short, the bolt's clack a
 // moment after; short, nothing after it. A spent case pings as it's thrown out. Footsteps and rolls
-// on the sand. The knife swishes through the air, and thuds into what it cuts. A bottle shatters, its glass tinkling down. A bug squeals and pops, as a bubble does; it bites, snapping. A rocket screams down, and goes off: a boom, a rumble rolling away, earth falling back. The desert's wind, always there, low, in gusts. Fires crackle as he comes near them. A new level: a choir sings out "aah"; a quest done, the same, much shorter and quieter. Bugs in sight rustle and scrabble, their legs ticking on the sand. A dry click is the trigger pulled on nothing. A reload: the magazine out, the new one in, the bolt.
+// on the sand. The knife swishes through the air, and thuds into what it cuts. A bottle shatters, its glass tinkling down. A bug squeals and pops, as a bubble does; it bites, snapping. A rocket screams down, and goes off: a boom, a rumble rolling away, earth falling back. The desert's wind, always there, low, in gusts. Fires crackle as he comes near them. A new level: a choir sings out "aah"; a quest done, the same, much shorter and quieter. Bugs in sight rustle and scrabble, their legs ticking on the sand. A dry click is the trigger pulled on nothing. Health back: a gasp of relief, "ahhh". His health low, his own heart pounding, steady, louder and quicker the nearer death. A reload: the magazine out, the new one in, the bolt. And the music, a track of its own (out of the safe zones only): uneasy, the desert's: a low drone breathing, a half-step grinding over it, a heartbeat on a frame drum, now and then a reed flute's phrase in the Hijaz mode, a glassy shimmer high up.
 // All of it goes through a compressor, as recorded gunfire does. Each one a little different, so a
 // burst doesn't sound like one sample over and over. Browsers only let a page make sound once the
 // player has done something: wake() from a key or a click starts it.
@@ -14,12 +14,17 @@ const WIND = { gain: 0.003, gust: 0.0015 }; // how loud the desert's wind is: al
 const GLASS = 2.2; // how loud a bottle shattering is (all of it)
 const BUGS = { rustle: 0.05, tick: 0.025 }; // how loud bugs right by him are: their rustle, a leg's tick
 const FIRE = { crackle: 0.05 }; // how loud a fire right by him is: a crackle
+const MUSIC = { gain: 0.1, fade: 2.5, drone: 0.05, dread: 0.012, beat: 0.22, ney: 0.05, glass: 0.004 }; // the music: how loud (all of it), how long it takes to fade in or out (s); its drone, the half-step over it, the heartbeat, the flute, the shimmer
+const HIJAZ = [293.7, 311.1, 370, 392, 440, 466.2, 523.3, 587.3]; // the flute's notes (Hz): D's Hijaz, the desert's mode (D, E flat, F sharp, G, A, B flat, C, D)
+const PULSE = { gain: 0.3, every: 0.85, quick: 0.3 }; // his own heart, his health low: how loud (the lowest it's heard: half of it), seconds between beats, how much quicker the nearer death
 const CASE_HEARD = { from: 0.05, per: 0.065, most: 0.7 }; // how many of the spent cases thrown out ping: hardly any at a burst's start, more with each round, up to most
 
 export function createSounds() {
   let ac = null, dry = null, clean = null, master = null, noise = null;
   let crackleTimer = 0; // when the fires' next crackle comes
   let rustle = null, rustlePan = null, tickTimer = 0; // the bugs' rustle (a gain on a noise loop, always on, and where it's heard), and when a leg ticks next
+  let pulseAt = 0; // when his heart's next beat comes (0: not beating)
+  let score = null, scoreIn = null, scoreOn = false, beatAt = 0, beatN = 0, phraseAt = 0, glassAt = 0; // the music: its fader, where its parts go in (through its hall), on or not, and when its next heartbeat, phrase, shimmer come (0: not yet set)
 
   // A second of white noise, played from anywhere in it
   function makeNoise() {
@@ -114,6 +119,84 @@ export function createSounds() {
     return p;
   }
 
+  // A hall's tail (seconds long): a convolver, noise dying away as its impulse
+  function makeHall(tail) {
+    const hall = ac.createConvolver(), len = Math.round(ac.sampleRate * tail), ir = ac.createBuffer(2, len, ac.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = ir.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3;
+    }
+    hall.buffer = ir;
+    return hall;
+  }
+
+  // The music's heartbeat at t (g: how hard): a frame drum's low thump, "lub", and its "dub" after, softer
+  function heartbeat(t, g) {
+    for (const [dt, k] of [[0, 1], [0.24, 0.6]]) {
+      ring(scoreIn, t + dt, 52, MUSIC.beat * g * k, 0.35, 0.8); // the skin's boom, dropping
+      burst(scoreIn, t + dt, { type: 'lowpass', from: 140, gain: MUSIC.beat * 0.6 * g * k, time: 0.12, attack: 0.004 }); // the hand on it
+    }
+  }
+  // A reed flute's note (a ney's) at t, f Hz, time seconds: sliding up into it, breathy, its vibrato
+  // coming in late, let go slowly
+  function ney(t, f, time, g) {
+    const osc = ac.createOscillator(), wob = ac.createOscillator(), depth = ac.createGain(), env = ac.createGain();
+    const air = ac.createBufferSource(), reed = ac.createBiquadFilter(), breath = ac.createGain(), end = t + time * 1.6;
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(f * 0.97, t);
+    osc.frequency.exponentialRampToValueAtTime(f, t + 0.12);
+    wob.frequency.value = 4.5 + Math.random();
+    depth.gain.setValueAtTime(0, t);
+    depth.gain.linearRampToValueAtTime(f * 0.008, t + time);
+    wob.connect(depth).connect(osc.frequency);
+    air.buffer = noise;
+    air.loop = true;
+    reed.type = 'bandpass';
+    reed.frequency.value = f * 2;
+    reed.Q.value = 8;
+    breath.gain.value = 3; // (the narrow band takes most of the noise out)
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(g, t + 0.15);
+    env.gain.setTargetAtTime(0.0001, t + time * 0.7, time * 0.15);
+    osc.connect(env);
+    air.connect(reed).connect(breath).connect(env);
+    env.connect(scoreIn);
+    for (const o of [osc, wob]) {
+      o.start(t);
+      o.stop(end);
+    }
+    air.start(t, Math.random() * 0.5);
+    air.stop(end);
+  }
+  // A flute's phrase from t: a few notes of the mode, mostly a step from the last, the last held long,
+  // left hanging on the D or the E flat a half-step over it (never quite at rest); returns when it ends
+  function phrase(t) {
+    const n = 3 + Math.floor(Math.random() * 4);
+    for (let k = 0, i = Math.floor(Math.random() * 5); k < n; k++) {
+      const last = k === n - 1, time = last ? 2.2 + Math.random() : 0.5 + Math.random() * 0.9;
+      if (last) i = Math.random() < 0.5 ? 0 : 1;
+      ney(t, HIJAZ[i], time + 0.2, MUSIC.ney * (0.7 + 0.3 * Math.random()));
+      t += time;
+      i = Math.max(0, Math.min(HIJAZ.length - 1, i + (Math.random() < 0.5 ? -1 : 1) * (Math.random() < 0.8 ? 1 : 2)));
+    }
+    return t;
+  }
+  // A shimmer at t, high up: two pure tones a half-step apart, one each side, swelling slowly and fading
+  function shimmer(t) {
+    const f = [1568, 1760, 1864.7][Math.floor(Math.random() * 3)];
+    for (const [k, pan] of [[1, -0.6], [1.0595, 0.6]]) {
+      const osc = ac.createOscillator(), env = ac.createGain(), p = ac.createStereoPanner();
+      osc.frequency.value = f * k;
+      p.pan.value = pan;
+      env.gain.setValueAtTime(0, t);
+      env.gain.linearRampToValueAtTime(MUSIC.glass, t + 3);
+      env.gain.linearRampToValueAtTime(0, t + 7);
+      osc.connect(env).connect(p).connect(scoreIn);
+      osc.start(t);
+      osc.stop(t + 7.1);
+    }
+  }
+
   // A choir singing in a hall (see levelUp), at seconds from now: chord (Hz) swelling up over up seconds, held
   // hold, dying away gently over about down (as a held note fades); each part a few voices a touch out
   // of tune with each other, each with its own slow vibrato, sung through the vowel's resonances; loud:
@@ -121,14 +204,8 @@ export function createSounds() {
   function choir({ up, hold, down, chord, loud, hall: tail, vowel: sound = AAH, at = 0 }) {
     if (!ac || ac.state !== 'running') return;
     const t = ac.currentTime + 0.005 + at, out = voice(0, true);
-    // The hall: the choir dry, and a long tail of it from the walls (noise dying away as the impulse)
-    const hall = ac.createConvolver(), wet = ac.createGain(), sung = ac.createGain();
-    const len = Math.round(ac.sampleRate * tail), ir = ac.createBuffer(2, len, ac.sampleRate);
-    for (let c = 0; c < 2; c++) {
-      const d = ir.getChannelData(c);
-      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3;
-    }
-    hall.buffer = ir;
+    // The hall: the choir dry, and a long tail of it from the walls
+    const hall = makeHall(tail), wet = ac.createGain(), sung = ac.createGain();
     wet.gain.value = 0.5;
     sung.connect(out);
     sung.connect(hall).connect(wet).connect(out);
@@ -226,6 +303,41 @@ export function createSounds() {
         rustlePan = ac.createStereoPanner();
         scrape.connect(hiss).connect(scrabble).connect(rustle).connect(rustlePan).connect(clean);
         scrape.start(0, Math.random() * 0.5);
+        // The music: a track of its own, on its own fader (silent till music() brings it in), past the
+        // compressor (the shots don't pump it); all of it in a long hall. Always on under it: the
+        // drone, low D and the A over it, raw, muffled, breathing slowly; and the dread, a D and the E
+        // flat a half-step over it grinding against each other, swelling and dying away, slower still
+        score = ac.createGain();
+        score.gain.value = 0;
+        score.connect(master);
+        scoreIn = ac.createGain();
+        const wet = ac.createGain();
+        wet.gain.value = 0.6;
+        scoreIn.connect(score);
+        scoreIn.connect(makeHall(3.5)).connect(wet).connect(score);
+        const muffle = ac.createBiquadFilter(), drone = ac.createGain(), dread = ac.createGain();
+        muffle.type = 'lowpass';
+        muffle.frequency.value = 260;
+        muffle.Q.value = 2;
+        drone.gain.value = MUSIC.drone;
+        dread.gain.value = MUSIC.dread;
+        for (const [f, detune, type, to] of [[73.4, -7, 'sawtooth', muffle], [73.4, 7, 'sawtooth', muffle], [110, 3, 'sawtooth', muffle], [146.8, 0, 'sine', dread], [155.6, 0, 'sine', dread]]) {
+          const osc = ac.createOscillator();
+          osc.type = type;
+          osc.frequency.value = f;
+          osc.detune.value = detune;
+          osc.connect(to);
+          osc.start();
+        }
+        muffle.connect(drone).connect(scoreIn);
+        dread.connect(scoreIn);
+        for (const [rate, depth, param] of [[0.04, 120, muffle.frequency], [0.021, MUSIC.dread, dread.gain]]) {
+          const wave = ac.createOscillator(), amount = ac.createGain();
+          wave.frequency.value = rate;
+          amount.gain.value = depth;
+          wave.connect(amount).connect(param);
+          wave.start();
+        }
       }
       if (ac.state === 'suspended') ac.resume();
     },
@@ -287,6 +399,54 @@ export function createSounds() {
       const chitter = Math.random() < 0.06, f = 2500 + Math.random() * 3500;
       for (let i = 0, at = t; i < (chitter ? 4 + Math.floor(Math.random() * 4) : 1); i++, at += 0.012 + Math.random() * 0.01) {
         burst(out, at, { type: 'bandpass', from: chitter ? 3600 : f, q: chitter ? 6 : 3, gain: g, time: 0.003 + Math.random() * 0.005, attack: 0.0003 }); // a tick
+      }
+    },
+
+    // The music, every frame: on (out of the safe zones) or off, faded in or out; fear (0..1, bugs
+    // near) quickens its heartbeat. Its heartbeat in fours of four, the last four left out; a flute's
+    // phrase every so often, long quiet between; a shimmer now and then, rarer
+    music(on, fear = 0) {
+      if (!ac || ac.state !== 'running') return;
+      const now = ac.currentTime;
+      if (on !== scoreOn) {
+        scoreOn = on;
+        score.gain.setTargetAtTime(on ? MUSIC.gain : 0, now, MUSIC.fade / 3);
+        beatAt = phraseAt = glassAt = 0; // (coming back: all of it from the start)
+      }
+      if (!on) return;
+      if (!beatAt) {
+        beatAt = now + 1;
+        beatN = 0;
+        phraseAt = now + 5 + Math.random() * 5;
+        glassAt = now + 15 + Math.random() * 15;
+      }
+      const ahead = now + 0.3; // (set up a little before it's due, so a slow frame doesn't make it late)
+      while (beatAt < ahead) {
+        if (beatN++ % 16 < 12) heartbeat(Math.max(now, beatAt), 0.6 + 0.4 * fear);
+        beatAt += 1.6 - 0.6 * fear;
+      }
+      if (phraseAt < ahead) phraseAt = phrase(Math.max(now, phraseAt)) + 7 + Math.random() * 10;
+      if (glassAt < ahead) {
+        shimmer(Math.max(now, glassAt));
+        glassAt += 20 + Math.random() * 25;
+      }
+    },
+
+    // His heart, every frame, his health low: low (0..1, how near death; null: not heard) beating
+    // steadily, louder and quicker the lower it is: a dull thump in his chest, "lub", and its "dub"
+    // after, softer; close, dry (no hall: it's in him)
+    pulse(low) {
+      if (!ac || ac.state !== 'running') return;
+      const now = ac.currentTime;
+      if (low === null) { pulseAt = 0; return; }
+      if (!pulseAt) pulseAt = now + 0.05;
+      while (pulseAt < now + 0.3) { // (set up a little ahead, as the music's)
+        const t = Math.max(now, pulseAt), g = PULSE.gain * (0.5 + 0.5 * low), out = voice(0, true);
+        for (const [dt, k, f] of [[0, 1, 48], [0.22, 0.65, 56]]) {
+          ring(out, t + dt, f, g * k, 0.28, 0.6); // the thump, dropping
+          burst(out, t + dt, { type: 'lowpass', from: 120, gain: g * 0.5 * k, time: 0.08, attack: 0.006 }); // its weight, muffled
+        }
+        pulseAt += PULSE.every - PULSE.quick * low;
       }
     },
 
@@ -501,14 +661,41 @@ export function createSounds() {
       burst(out, t + 0.02, { type: 'lowpass', from: 260 * p, gain: 0.3, time: 0.07, attack: 0.003 }); // the thud
     },
 
-    // A medkit used: the hiss of a stim going in, and a soft bright chime going up (two notes, a fifth
-    // apart, ringing a while)
+    // Health back (a medkit, the campfire): a gasp of relief, "ahhh": a voice with breath in it, through
+    // the open "a" (its resonances), quick to come, rising a little, then let go, the breath outlasting
+    // the voice
     heal() {
       if (!ac || ac.state !== 'running') return;
-      const t = ac.currentTime + 0.005, out = voice(0, true);
-      burst(out, t, { type: 'highpass', from: 3000, to: 5000, gain: 0.05, time: 0.25, attack: 0.02 }); // the hiss
-      ring(out, t + 0.05, 660, 0.06, 0.5, -0.02); // the chime...
-      ring(out, t + 0.14, 990, 0.05, 0.7, -0.02); // ...going up
+      const t = ac.currentTime + 0.005, p = 0.94 + Math.random() * 0.12, out = voice(0, true), time = 0.6;
+      const mouth = ac.createGain(); // (both through the vowel)
+      for (const [f, q, g] of AAH) {
+        const bp = ac.createBiquadFilter(), lv = ac.createGain();
+        bp.type = 'bandpass';
+        bp.frequency.setValueAtTime(f * p, t);
+        bp.frequency.exponentialRampToValueAtTime(f * 0.85 * p, t + time); // (the mouth closing as it ends)
+        bp.Q.value = q * 0.6;
+        lv.gain.value = g;
+        mouth.connect(bp).connect(lv).connect(out);
+      }
+      const voiced = ac.createOscillator(), venv = ac.createGain(); // the voice: a man's, up a little, then down
+      voiced.type = 'sawtooth';
+      voiced.frequency.setValueAtTime(150 * p, t);
+      voiced.frequency.exponentialRampToValueAtTime(175 * p, t + 0.08);
+      voiced.frequency.exponentialRampToValueAtTime(130 * p, t + time);
+      venv.gain.setValueAtTime(0.0001, t);
+      venv.gain.exponentialRampToValueAtTime(0.05, t + 0.04);
+      venv.gain.setTargetAtTime(0.0001, t + 0.12, time / 4);
+      voiced.connect(venv).connect(mouth);
+      voiced.start(t);
+      voiced.stop(t + time + 0.2);
+      const air = ac.createBufferSource(), aenv = ac.createGain(); // the breath in it, a little longer
+      air.buffer = noise;
+      air.loop = true;
+      aenv.gain.setValueAtTime(0.0001, t);
+      aenv.gain.exponentialRampToValueAtTime(0.25, t + 0.03);
+      aenv.gain.setTargetAtTime(0.0001, t + 0.15, time / 3);
+      air.connect(aenv).connect(mouth);
+      air.start(t, Math.random() * 0.5, time + 0.3);
     },
 
     // A new level: a choir singing out "aah", a major chord swelling up and dying away gently in a hall

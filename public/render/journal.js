@@ -13,10 +13,11 @@ const SMALL_TITLE = `700 12px ${FONT}`, SMALL_NOTE = `italic 300 11px ${FONT}`; 
 const PAD = 14, TITLE_H = 20, LINE = 17, STEP_GAP = 3, GAP = 10; // px
 const SPLIT = 9; // px either side of the faint line between a quest's steps and its notes
 
-// A step's text (quests.js writes it as HTML) in runs: { text, gold } (what it's after: in a goal span)
+// A step's text (quests.js writes it as HTML) in runs: { text, gold } (what it's after: in a goal span;
+// a <br>, a new line)
 const runs = (html) => html.split(/(<span class="goal">.*?<\/span>)/).filter(Boolean).map((part) => {
   const goal = part.match(/^<span class="goal">(.*?)<\/span>$/);
-  return { text: (goal ? goal[1] : part).replace(/<[^>]*>/g, ''), gold: !!goal };
+  return { text: (goal ? goal[1] : part).replace(/<br\s*\/?>/g, '\n').replace(/<[^>]*>/g, ''), gold: !!goal };
 });
 
 // ctx: the canvas to draw on
@@ -29,6 +30,11 @@ export function createJournal(ctx) {
     for (const { text, gold } of parts)
       for (const word of text.split(/(\s+)/)) {
         if (!word) continue;
+        if (word.includes('\n')) { // (a new line, whatever's left of this one)
+          lines.push([]);
+          x = 0;
+          continue;
+        }
         const w = ctx.measureText(word).width;
         if (x + w > width && x > 0) {
           lines.push([]);

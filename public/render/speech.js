@@ -8,8 +8,9 @@ export const TYPE_RATE = 40; // letters per second
 const MAX_W = 230; // px, the text wraps to this
 const LINE_H = 16;
 
-// ctx: the canvas to draw on
-export function createSpeech(ctx) {
+// ctx: the canvas to draw on; voices: a list shared by everyone who speaks (the hero, the fellow):
+// one at a time, a line started cuts off whoever else was saying one
+export function createSpeech(ctx, voices = []) {
   let line = null; // { text, rows (wrapped once, so the plate doesn't change size as it types), t, keep }
 
   function wrap(text) {
@@ -27,9 +28,10 @@ export function createSpeech(ctx) {
     return rows;
   }
 
-  return {
+  const voice = {
     // keep: it stays up till let go
     say(text, keep = false) {
+      for (const v of voices) if (v !== voice) v.hush();
       line = { text, rows: wrap(text), t: 0, keep };
     },
     // A kept line goes on to fade as any other (at once, if it's been up long enough)
@@ -86,4 +88,6 @@ export function createSpeech(ctx) {
       return { top, edge: left };
     },
   };
+  voices.push(voice);
+  return voice;
 }

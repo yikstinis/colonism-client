@@ -11,7 +11,7 @@ npm run dev        # http://localhost:8787, restarts on server changes
 Controls: WASD / arrows to run, hold Shift to crouch (and sneak, slower), Space to dodge roll, E to use things (hold it to pick something up), click to slash with the knife, hold the right button to fire the submachine gun in bursts (once armed); the hero looks at the mouse cursor (moving away from it
 he backpedals, sideways he sidesteps, both slower than running).
 
-The world is a small planet (100 m in radius, ~630 m round), a desert ball with no edges; the minimap in the bottom left
+The world is a small planet (300 m in radius, ~1.9 km round), a desert ball with no edges; the minimap in the bottom left
 shows it as a globe turning under the hero, the capsule marked on it.
 
 ## Layout
@@ -28,6 +28,8 @@ shows it as a globe turning under the hero, the capsule marked on it.
 - `public/render/reach.js` — the knife's reach on the ground in front of the armed hero, flaring in a slash.
 - `public/render/life.js` — health, the hero's and the bugs' (and the bottles' and the bag's) alike: a short red bar for each point, in rows (rings round the hero) that fade the farther out they go.
   A unit's health should ideally go no higher than **375**: that's 15 rows over it, the last just visible; past that the rows can't be seen and hits stop showing.
+  The gun's magazine is shown the same way (`MAG` in `public/client.js`): a bar for each round, in arcs to the right of the aim, fading faster than health's.
+  A gun's magazine should ideally hold no more than **140** rounds: that's 9 arcs, the last just visible; past about 305 (17 arcs) the rounds aren't drawn at all.
 - `public/render/shots.js` — a round's muzzle flash and tracer.
 - `public/sounds.js` — the sounds, made on the fly with Web Audio (no files): the gun's shots, the knife, steps and rolls, the desert's wind, fires crackling.
 - `public/render/speech.js` — what the hero says, typed out over his head.
@@ -35,6 +37,7 @@ shows it as a globe turning under the hero, the capsule marked on it.
 - `tools/make-art.mjs` — generates the art and `sprites.json` (`npm run art`, ~1.5 min):
   the hero is a smooth 3D body (`tools/lib/sdf-body.mjs`) rendered into pixel art, and so are the landing capsule,
   the backpack, the wrecked army bed by it, a crate of bottles to shoot, past it a smashed bedside table and a punching bag to try the knife on.
+  Out in the West (sector D2) lies the fellow's equipment: a waist-high wooden crate with test tubes and flasks packed in it, a stone desert well by it, in a safe zone of their own; hold E to pick the crate up.
 
 Env: `PORT`.
 

@@ -79,15 +79,31 @@ export function createQuests(box, side, done = () => {}) {
       title: 'Find a way off the planet',
       main: true,
       target: 'fellow',
-      about: 'Try to <span class="goal">find something out</span> from Oldman. He looks smart, maybe he knows something...',
+      about: 'Try to <span class="goal">find something out</span> from the fellow. He looks smart, maybe he knows something...',
       steps: [{ text: 'Find something out', update: ({ fellowAsked }) => fellowAsked }], // (he's asked him the way off: 1, and had his answer)
     },
     {
       title: 'Bring the equipment to the fellow',
       main: true,
-      target: 'equipment', // (a place: its mark in sector D2, see client.js)
-      about: 'The fellow lost his <span class="goal">equipment</span>. He’s useless without it.',
-      steps: [{ text: 'Bring the equipment to the fellow', update: () => false }], // (nothing to pick up there yet: it stays on)
+      about: 'The fellow lost his <span class="goal">equipment</span>. He’s useless without it. Bring it back.',
+      steps: [
+        { text: 'Find the <span class="goal">equipment</span> (hold E to pick it up)', target: 'equipment', update: ({ hasEquipment }) => hasEquipment }, // (its case in sector D2, see shared/world.js)
+        { text: 'Bring the equipment to the <span class="goal">fellow</span>', target: 'fellow', update: ({ equipmentReturned }) => equipmentReturned }, // (E by him with it)
+      ],
+    },
+    {
+      title: 'Evacuation plan',
+      main: true,
+      target: 'fellow',
+      about: 'Criticize the <span class="goal">fellow</span>’s idea of how to get us rescued...',
+      steps: [{ text: 'Hear out the fellow’s plan', update: ({ fellowThreatened }) => fellowThreatened }], // (E by him: he owns up; then 1, the hero's answer)
+    },
+    {
+      title: 'Teleportation device',
+      main: true,
+      target: 'wreck', // (a little low and right of the middle of sector C3, see shared/world.js)
+      about: 'Get the <span class="goal">teleportation device</span> from the <span class="goal">ship’s wreckage</span>.',
+      steps: [{ text: 'Get the teleportation device', update: () => false }], // (nothing ends it yet: the wreck, near the equator, to come)
     },
   ];
   // Side quests: off the chain, white, each on from when it's started (see start) alongside the one on,
@@ -96,8 +112,8 @@ export function createQuests(box, side, done = () => {}) {
     hugeThing: {
       title: 'Huge thing',
       target: 'hugeThing', // (a place: its mark in sector C1, see client.js; a white arrow to it)
-      about: 'The fellow saw some <span class="goal">huge thing</span> near the pole. Might be worth a look.',
-      steps: [{ text: 'Check out the huge thing', update: () => false }], // (nothing to do there yet: it stays on)
+      about: 'The fellow saw some <span class="goal">huge thing</span> near the pole. Might be worth a look...',
+      steps: [{ text: 'Check out the huge thing', update: ({ eggKilled }) => eggKilled }], // (done once it's burst, see client.js)
     },
   };
   let current = 0, html = '', sideHtml = '', last = {}; // last: the latest input
@@ -149,15 +165,23 @@ export function createQuests(box, side, done = () => {}) {
   return {
     // The quests so far, first to last, for the journal: [{ title, about, main, done, on, steps: [{ text, done }], notes }]
     // (on: the one on now, and after it the side ones on)
-    list: () => [...quests.slice(0, current + 1), ...sidesOn()].map((q, i) => ({
-      title: q.title, about: q.about ?? '', main: !!q.main, side: i > current, done: q.steps.every((s) => s.done), on: i >= current, steps: q.steps.map((s) => ({ text: s.text, done: !!s.done })),
-      notes: q.notes ?? [],
-    })),
+    // (a side one done: among the done ones, before the quest that was on when it was done)
+    list() {
+      const doneSides = Object.values(sides).filter((q) => q.on && q.steps.every((s) => s.done));
+      const entry = (q, on, side = false) => ({
+        title: q.title, about: q.about ?? '', main: !!q.main, side, done: q.steps.every((s) => s.done), on, steps: q.steps.map((s) => ({ text: s.text, done: !!s.done })),
+        notes: q.notes ?? [],
+      });
+      return [
+        ...quests.slice(0, current + 1).flatMap((q, i) => [...doneSides.filter((d) => (d.doneAt ?? current) === i).map((d) => entry(d, false, true)), entry(q, i === current)]),
+        ...sidesOn().map((q) => entry(q, true, true)),
+      ];
+    },
     // Where he's got to, to keep (see client.js: the checkpoint): the quest on, each so far's steps done
     // and notes; load() puts it back
     save: () => ({
       current, quests: quests.slice(0, current + 1).map((q) => ({ done: q.steps.map((s) => !!s.done), notes: q.notes ?? [] })),
-      sides: Object.fromEntries(Object.entries(sides).filter(([, q]) => q.on).map(([id, q]) => [id, { done: q.steps.map((s) => !!s.done), notes: q.notes ?? [] }])),
+      sides: Object.fromEntries(Object.entries(sides).filter(([, q]) => q.on).map(([id, q]) => [id, { done: q.steps.map((s) => !!s.done), notes: q.notes ?? [], doneAt: q.doneAt }])),
     }),
     load(saved) {
       for (const [id, sq] of Object.entries(saved.sides ?? {})) {
@@ -165,6 +189,7 @@ export function createQuests(box, side, done = () => {}) {
         sides[id].on = true;
         sides[id].steps.forEach((s, k) => { s.done = !!sq.done[k]; });
         sides[id].notes = [...sq.notes];
+        sides[id].doneAt = sq.doneAt;
       }
       renderSides();
       current = Math.min(saved.current, quests.length - 1);
@@ -175,15 +200,17 @@ export function createQuests(box, side, done = () => {}) {
       });
       render();
     },
-    // A side quest (by its id in sides) on from now; started(id): it is (done or not)
+    // A side quest (by its id in sides) on from now; started(id): it is (done or not); finished(id): it's done
     start(id) {
       sides[id].on = true;
       renderSides();
     },
     started: (id) => !!sides[id].on,
-    // Something that happened, noted down in the journal under the quest on now (as he'd write it)
-    note(text) {
-      (quests[current].notes ??= []).push(text);
+    finished: (id) => !!sides[id].on && sides[id].steps.every((s) => s.done), // (and done)
+    // Something that happened, noted down in the journal under the quest on now (as he'd write it), or
+    // under a side quest (by its id in sides)
+    note(text, id = null) {
+      ((id ? sides[id] : quests[current]).notes ??= []).push(text);
     },
     // The name of the object the current quest leads to (its first step not done's, or its own), or
     // null (none, or the quest is done)
@@ -203,10 +230,13 @@ export function createQuests(box, side, done = () => {}) {
       return q.steps.every((s) => s.done) ? null : q.cue ?? null;
     },
     // input: { dt, running (s), dx, dy (the run's direction), aim (angle to the cursor, or null),
-    // hasBackpack, bottlesBroken (bottles shot off the crate), bagHits (knife cuts in the punching bag), talentsTaken (how many he has), firesideUsed (he's used the safe space's campfire: E), fellowTalked (he's spoken to the fellow: E), fellowAsked (he's asked him the way off: 1, and had his answer) }
+    // hasBackpack, bottlesBroken (bottles shot off the crate), bagHits (knife cuts in the punching bag), talentsTaken (how many he has), firesideUsed (he's used the safe space's campfire: E), fellowTalked (he's spoken to the fellow: E), fellowAsked (he's asked him the way off: 1, and had his answer), hasEquipment (he's picked up the fellow's crate), equipmentReturned (and handed it back to him: E by him), fellowThreatened (told him he's going to die: the evacuation plan's answer) }
     update(input) {
       last = input;
-      for (const q of sidesOn()) for (const s of q.steps) if (!s.done && s.update(input)) s.done = true;
+      for (const q of sidesOn()) {
+        for (const s of q.steps) if (!s.done && s.update(input)) s.done = true;
+        if (q.steps.every((s) => s.done)) q.doneAt = current; // (where it goes among the done ones in the journal)
+      }
       renderSides();
       const q = quests[current];
       if (!q.steps.every((s) => s.done)) {

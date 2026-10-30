@@ -56,9 +56,10 @@ export const SPAWN = { x: 528, y: 528 };
 export const UNITS_PER_M = 22; // world units per meter
 export const PLANET = 'Sandy'; // its name
 export const SYSTEM = 'Albion'; // the star system it's in
-export const PLANET_R = 100 * UNITS_PER_M; // ~630 m round
+const PLANET_M = 300; // its radius, meters (~1.9 km round): the places on it go by angle (the map's grid), so they're as far apart as it's big
+export const PLANET_R = PLANET_M * UNITS_PER_M;
 export const POLE = [0, 1, 0];
-// Where we come down: high in the north (65°, ~44 m from the pole), a little off to one side (25°
+// Where we come down: high in the north (65°, ~130 m from the pole), a little off to one side (25°
 // round from the grid's first meridian), north up to begin with
 const LANDING = { lat: (65 * Math.PI) / 180, lon: (25 * Math.PI) / 180 };
 export const CHART0 = northChart(
@@ -206,7 +207,6 @@ export const OBJECTS = [
   { name: 'bottles', x: BOTTLES.x, y: BOTTLES.y, label: 'Bottles', solid: BOTTLES_SOLID, say: 'My booze! Funny how not a single bottle broke in the fall...' },
   {
     name: 'backpack', x: BACKPACK.x, y: BACKPACK.y, label: 'Backpack', pickup: true, solid: BACKPACK_SOLID, flat: true,
-    pickupSay: 'Lucky they threw my stuff out too! Must’ve thought it was junk...',
   },
 ];
 
@@ -231,7 +231,7 @@ export const OBSTACLES = [
 // The safe space (see quests.js), where the hero saw something as he fell: STRUCTURES_WEST meters west
 // of the backpack and STRUCTURES_SOUTH south (on its chart, north up), a point on the ball ({ home,
 // label }, as an object's: the quest's arrow and the map's mark go by it), its campfire and all round it
-const STRUCTURES_WEST = 25, STRUCTURES_SOUTH = 30; // meters west and south of it (in the map's grid: low in the cell next to the escape pod's, well off its safe zone: a way to fight through)
+const STRUCTURES_WEST = 0.25 * PLANET_M, STRUCTURES_SOUTH = 0.3 * PLANET_M; // meters west and south of it (as the planet's big) (in the map's grid: low in the cell next to the escape pod's, well off its safe zone: a way to fight through)
 const backpackHome = toSphere(CHART0, BACKPACK.x - SPAWN.x, BACKPACK.y - SPAWN.y, PLANET_R);
 export const STRUCTURES = { label: 'Safe space', home: toSphere(northChart(backpackHome, POLE, [0, 1, 0]), -STRUCTURES_WEST * UNITS_PER_M, STRUCTURES_SOUTH * UNITS_PER_M, PLANET_R) };
 Object.assign(STRUCTURES, chartPoint(CHART0, STRUCTURES.home)); // (its x, y on the chart, kept there as the objects')
@@ -266,23 +266,223 @@ const FELLOW_SOLID = { ...modelToWorld(GARAGE, [0.55, GARAGE_SIZE[1] + 0.9]), r:
 OBJECTS.push({ name: 'fellow', x: FELLOW_SOLID.x, y: FELLOW_SOLID.y, label: 'Fellow', solid: FELLOW_SOLID, say: 'Oh, a visitor! I hate visitors! Haven’t had any in ages... Are you going to kill me?', speaks: true, breathes: true }); // (speaks: his line's his own, over his head)
 OBSTACLES.push(FELLOW_SOLID);
 
-// The huge thing the fellow saw near the pole (see quests.js): in the middle of the map's cell C1 ({ home,
-// label }, as the safe space: the quest's arrow and the map's mark go by it), a campfire as the safe
-// space's burning right there, a safe zone round it
+// The huge thing the fellow saw near the pole (see quests.js), in the middle of the map's cell C1: an
+// alien bug's egg, near twice as tall as the hero, sunk in a pool of its poison, a couple of big spikes
+// on it, pulsing slowly (breathes, as the fellow: its frames), green reek rising off it (see
+// tools/make-art.mjs); it stops the hero, and shots; a safe zone round it; a pit under it, hidden till
+// it's burst. HUGE_THING is its point on the ball ({ home, label }, as the safe space: the quest's
+// arrow and the map's mark go by it)
 export const HUGE_THING = { label: 'Huge thing', home: cellPoint('C1') };
 Object.assign(HUGE_THING, chartPoint(CHART0, HUGE_THING.home));
-const POLE_FIRE_SOLID = { x: HUGE_THING.x, y: HUGE_THING.y, r: 0.55 * UNITS_PER_M, of: 'pole_fire' };
-OBJECTS.push({ name: 'campfire', id: 'pole_fire', x: HUGE_THING.x, y: HUGE_THING.y, label: 'Campfire', solid: POLE_FIRE_SOLID, heals: true, say: 'Someone keeps a fire going out here too...' }); // (the safe space's art, its flames; not its checkpoint: see client.js)
-OBSTACLES.push(POLE_FIRE_SOLID);
+// The wrecked ship the fellow saw closer to the equator (see quests.js), a little low and right of the middle of the map's cell
+// C3, where the teleportation device is to be got from: a big white ship (as the escape pod), its orange
+// paint worn, come down and broken in two, half buried in the sand (lower than the hero: nothing to see through), its halves lying square to each other, two sides of a square:
+// the front half along the north (narrowing to its crumpled front, holes torn in it), the back half (a
+// big round engine face at its end, the hatch in its side) down the west; their torn ends by
+// the corner between them, a gap left there, the way in (see tools/make-art.mjs). Inside the square, the
+// Mother's ground (see client.js). It stops the hero, and shots; a big safe zone round it. WRECK is its
+// point on the ball ({ home, label }: the quest's arrow and the map's mark go by it), the square's middle
+export const WRECK = { label: 'Ship wreckage', home: cellPoint('C3', 0.6, 0.7) }; // (the whole of it still in the cell)
+Object.assign(WRECK, chartPoint(CHART0, WRECK.home));
+// The ship, whole (meters; x along it from its back end, its front +x; round it, angles from across (y)
+// up (z)): its radius; how high its middle (its axis) lies (sunk); its body [from, to], its front's tip,
+// and how round that is (its radius); how far its engine face sticks out back; the hatch [where along it,
+// round it]; holes torn in its top [where along it, half how long]; antennas [where along it, how tall];
+// boxes of hardware on it [where along it, round it, half how big]; its front sunk deeper [from where
+// along it, how much deeper at its tip], its nose gone under the sand
+export const WRECK_ROCKET = {
+  R: 1.5, zc: -0.6, body: [0, 16.5], tip: 21.5, noseR: 0.55, face: 0.3, hatch: [5.5, Math.PI / 3],
+  holes: [[12.3, 0.7], [17.8, 0.45]], antennas: [], boxes: [[14.6, 1.3, 0.2], [10.2, 1.9, 0.17]], noseSink: [13, 1.2],
+};
+// How wide it is at x along it (its front narrowing to its rounded end)
+export const rocketR = (x) => {
+  const { R, body, tip, noseR } = WRECK_ROCKET, end = tip - noseR;
+  if (x <= body[1]) return R;
+  if (x <= end) return R + (noseR - R) * ((x - body[1]) / (end - body[1]));
+  return Math.sqrt(Math.max(0.1, noseR * noseR - (x - end) ** 2));
+};
+// Its pieces: the sprite's name; the stretch of it each is (from, to, along it); torn off (open: 1 its
+// front end, -1 its back); where its middle is (meters off WRECK: x east, y south); turned (yaw: its front
+// that way); turned round its length (roll); how high its highest bit stands (top)
+export const WRECK_PIECES = [
+  { name: 'wreck', from: 9, to: 21.6, open: -1, at: [2.8, -7], yaw: 0, roll: 0.06, top: 2 },
+  { name: 'wreck_tail', from: -0.5, to: 9, open: 1, at: [-7, 1.25], yaw: -Math.PI / 2, roll: -0.08, top: 2 },
+];
+// (not on the map for now: its place, the quest's arrow and mark, its safe zone stay; WRECK_PIECES is
+// still what the art's drawn by)
+export const WRECK_SHOWN = false;
+const wreckAt = ([x, y]) => modelToWorld({ ...WRECK, yaw: 0 }, [x, y]);
+const WRECK_SOLIDS = []; // (the rocket's own: how near he is to it, to search it: see client.js)
+for (const p of WRECK_SHOWN ? WRECK_PIECES : []) {
+  const { R } = WRECK_ROCKET, mid = (p.from + p.to) / 2;
+  const at = wreckAt(p.at), o = { name: p.name, ...at, yaw: p.yaw, footprint: [(p.to - p.from) / 2, R, 4] }; // (footprint: big, see client.js's drawing order)
+  OBJECTS.push(o);
+  // Solid circles along it, as wide as it is there
+  const n = Math.max(1, Math.round((p.to - p.from - 1) / 1.4));
+  for (let k = 0; k <= n; k++) {
+    const x = p.from + 0.5 + (k / n) * (p.to - p.from - 1);
+    const { zc, tip, noseSink: [s0, deep] } = WRECK_ROCKET;
+    if (zc + rocketR(Math.max(0, x)) - (x > s0 ? (deep * (x - s0)) / (tip - s0) : 0) < 0.15) continue; // (gone under the sand there)
+    const solid = { ...modelToWorld(o, [x - mid, 0]), r: rocketR(Math.max(0, x)) * UNITS_PER_M, cover: true, of: p.name };
+    OBSTACLES.push(solid);
+    WRECK_SOLIDS.push(solid);
+  }
+}
+// Cargo containers thrown out of it, lying round it outside the square, buried deep, tipped: the kinds by
+// sprite name (paint; turned (yaw); tipped (pitch: its far end down; roll); how high its middle is: sunk);
+// where each lies (meters off WRECK) and which it is. Each stops the hero, and shots; low: never seen through
+export const CONTAINER_KINDS = {
+  container_orange: { paint: 'orange', yaw: 0.45, pitch: 0.22, roll: 0.05, zc: 0.15 },
+  container_white: { paint: 'white', yaw: -0.35, pitch: -0.08, roll: 0.18, zc: 0.05 },
+  container_teal: { paint: 'teal', yaw: 1.2, pitch: 0.12, roll: -0.12, zc: 0.1 },
+};
+const CONTAINERS = [[13, -8, 'container_orange'], [-10.5, 9.5, 'container_white'], [7.5, 8.5, 'container_teal'], [-12.5, -1.5, 'container_orange'], [12, 3, 'container_white']];
+CONTAINERS.forEach(([mx, my, kind], i) => {
+  const name = `container_${i}`, o = { name, sprite: kind, ...wreckAt([mx, my]), yaw: CONTAINER_KINDS[kind].yaw };
+  OBJECTS.push(o);
+  for (const m of [-1, 0, 1]) OBSTACLES.push({ ...modelToWorld(o, [m, 0]), r: 0.7 * UNITS_PER_M, cover: true, of: name });
+});
+if (WRECK_SHOWN) Object.assign(OBJECTS.find((o) => o.name === 'wreck'), { label: WRECK.label, say: 'Nothing but scrap in here... Wait, what’s that noise?', solids: WRECK_SOLIDS }); // (say: his line as he's done searching it, see client.js)
+// Where the Mother comes out: in the middle of the square (its point on the ball, as WRECK's)
+export const MOTHER_AT = wreckAt([1.5, 1]);
+MOTHER_AT.home = toSphere(CHART0, MOTHER_AT.x - SPAWN.x, MOTHER_AT.y - SPAWN.y, PLANET_R);
+export const EGG_R = 1.15; // meters: how wide it is, round its middle (the art draws it so)
+const EGG_SOLID = { x: HUGE_THING.x, y: HUGE_THING.y, r: (EGG_R + 0.1) * UNITS_PER_M, cover: true, of: 'egg' };
+OBJECTS.push({ name: 'egg', x: HUGE_THING.x, y: HUGE_THING.y, label: 'Huge thing', solid: EGG_SOLID, breathes: true, quest: 'hugeThing', say: 'I won’t fight the urge to destroy this abomination!', sayOff: 'Ew, it’s huge... Looks disgusting!' }); // (sayOff: his line while its quest, quest, isn't on; say, on it: it wakes, see client.js)
+OBSTACLES.push(EGG_SOLID);
+// ...and the pit under it, left once it's burst (see client.js): a deep well of its poison; walked round, shot over
+OBJECTS.push({ name: 'egg_pit', x: HUGE_THING.x, y: HUGE_THING.y, flat: true, later: true, solid: { x: HUGE_THING.x, y: HUGE_THING.y, r: 1.1 * UNITS_PER_M, of: 'egg_pit', dx: 0, dy: 0 } });
+
+// The fellow's equipment he lost in the West (see quests.js), in the middle of the map's cell D2,
+// where his beacon shows it: a wooden crate to the hero's waist, open, test tubes and flasks packed in
+// it, his beacon's lamp on a corner (see tools/make-art.mjs); hold E to pick it
+// up; it stops the hero, and shots (tall enough to hide behind); a safe zone
+// round it. EQUIPMENT is its point on the ball ({ home, label }, as the huge thing's: the quest's arrow
+// and the map's mark go by it, picked up or not)
+export const EQUIPMENT = { label: 'Equipment', home: cellPoint('D2') };
+Object.assign(EQUIPMENT, chartPoint(CHART0, EQUIPMENT.home));
+const EQUIPMENT_SOLID = { x: EQUIPMENT.x, y: EQUIPMENT.y, r: 0.58 * UNITS_PER_M, cover: true, of: 'equipment' };
+OBJECTS.push({ name: 'equipment', x: EQUIPMENT.x, y: EQUIPMENT.y, label: EQUIPMENT.label, pickup: true, solid: EQUIPMENT_SOLID, pickupSay: 'Test tubes, flasks... Easy now, not a single one cracked.' });
+OBSTACLES.push(EQUIPMENT_SOLID);
+// By it, a desert well: a ring of rough stones round a dark hole (see tools/make-art.mjs), behind it
+// and a little to its left; it stops the hero, and shots (waist-high stone). It goes on the map once
+// he's come up to it (see client.js)
+const WELL_SOLID = { x: EQUIPMENT.x - 1.05 * UNITS_PER_M, y: EQUIPMENT.y - 2.6 * UNITS_PER_M, r: 0.78 * UNITS_PER_M, cover: true, of: 'well' };
+OBJECTS.push({ name: 'well', x: WELL_SOLID.x, y: WELL_SOLID.y, label: 'Well', solid: WELL_SOLID, say: 'Almost empty... Useless...' });
+OBSTACLES.push(WELL_SOLID);
+// And by the well, a couple of cacti: a tall one with its arms up behind it on the left, a squat round
+// one off to its right, over the crate's right corner; they stop the hero (the tall one shots too)
+const CACTUS_SOLID = { x: WELL_SOLID.x - 1.45 * UNITS_PER_M, y: WELL_SOLID.y - 0.5 * UNITS_PER_M, r: 0.22 * UNITS_PER_M, cover: true, of: 'cactus' };
+const CACTUS_SMALL_SOLID = { x: WELL_SOLID.x + 3.1 * UNITS_PER_M, y: WELL_SOLID.y + 1.0 * UNITS_PER_M, r: 0.28 * UNITS_PER_M, of: 'cactus_small' };
+OBJECTS.push({ name: 'cactus', x: CACTUS_SOLID.x, y: CACTUS_SOLID.y, solid: CACTUS_SOLID }, { name: 'cactus_small', x: CACTUS_SMALL_SOLID.x, y: CACTUS_SMALL_SOLID.y, solid: CACTUS_SMALL_SOLID });
+OBSTACLES.push(CACTUS_SOLID, CACTUS_SMALL_SOLID);
+
+// Cacti and rocks strewn over the sectors round here (C1, D1, C2, D2, C3, D3): so many of each in each
+// sector, at random (the same every time), clear of everything else there and of the places that matter;
+// each a solid circle as wide as it is (the tall ones stopping shots too). Kinds by sprite name:
+// [radius (meters), cover]
+const CACTUS_KINDS = { cactus: [0.22, true], cactus_small: [0.28, false], cactus_organ: [0.25, true], cactus_pear: [0.35, false], cactus_cluster: [0.38, false] };
+const ROCK_KINDS = { rock_boulder: [0.85, true], rock_slab: [0.75, false], rock_pile: [0.55, false], rock_spire: [0.5, true], rock_pair: [0.95, true] };
+// Cracks in the ground, acid in them, its reek rising (green or yellow): the kinds by sprite name (the
+// acid's color; the cracks, each [how wide (half, meters), its points (meters: x east, y south)], one
+// point a round hole). Each lies flat; walked round (solid circles along it), shot over
+export const FISSURE_KINDS = {
+  fissure_long: { acid: 'green', paths: [[0.32, [[-2.2, 0.3], [-1.2, -0.1], [-0.3, 0.25], [0.6, -0.15], [1.5, 0.1], [2.3, -0.3]]]] },
+  fissure_fork: { acid: 'yellow', paths: [[0.28, [[-1.6, 0.8], [-0.6, 0.3], [0.2, 0], [1.3, -0.6], [2, -0.7]]], [0.2, [[0.2, 0], [0.9, 0.6], [1.6, 0.9]]]] },
+  fissure_pool: { acid: 'green', paths: [[0.75, [[0, 0]]], [0.18, [[-1.7, -0.45], [-0.6, -0.1]]], [0.16, [[0.6, 0.2], [1.7, 0.65]]], [0.14, [[0.1, 0.6], [0.35, 1.4]]]] },
+  fissure_web: { acid: 'yellow', paths: [[0.2, [[-1.8, -0.5], [-0.8, -0.2], [0, -0.4], [1, 0.1], [1.9, 0]]], [0.15, [[-0.8, -0.2], [-0.5, 0.6], [-0.9, 1.1]]], [0.14, [[1, 0.1], [1.3, 0.8]]]] },
+  fissure_zigzag: { acid: 'green', paths: [[0.22, [[-2.6, -0.6], [-1.6, 0.4], [-0.6, -0.5], [0.4, 0.5], [1.4, -0.4], [2.5, 0.3]]]] },
+  fissure_star: { acid: 'yellow', paths: [[0.45, [[0, 0]]], ...[0.3, 1.5, 2.6, 3.7, 5].map((a, i) => [0.15 - 0.01 * i, [[Math.cos(a) * 0.35, Math.sin(a) * 0.35], [Math.cos(a + 0.2) * (1.3 + 0.3 * (i % 2)), Math.sin(a + 0.2) * (1.3 + 0.3 * (i % 2))]]])] },
+  fissure_twin: { acid: 'green', paths: [[0.24, [[-2, -0.5], [-0.9, -0.7], [0.3, -0.45], [1.6, -0.8]]], [0.2, [[-1.5, 0.55], [-0.4, 0.35], [0.8, 0.6], [1.9, 0.3]]]] },
+  fissure_hook: { acid: 'yellow', paths: [[0.26, [[-2, 0.8], [-1.2, 0.2], [-0.2, -0.3], [0.8, -0.3], [1.5, 0.2], [1.7, 0.9]]]] },
+  fissure_small: { acid: 'green', paths: [[0.2, [[-0.9, 0.2], [-0.2, -0.1], [0.5, 0.15], [1, -0.15]]]] },
+  fissure_pools: { acid: 'yellow', paths: [[0.5, [[-0.9, -0.1]]], [0.38, [[0.9, 0.25]]], [0.18, [[-0.9, -0.1], [0, 0.15], [0.9, 0.25]]], [0.12, [[0.9, 0.25], [1.6, 0.9]]]] },
+};
+// How wide a crack is t of the way along it (0..1): narrowing to its ends (a hole: all of it)
+export const fissureWidth = (w, pts, t) => (pts.length < 2 ? w : w * (0.3 + 0.7 * Math.sin(Math.PI * t) ** 0.6));
+// Along each of its cracks every so far (meters): { x, y, w (how wide there) }
+export function fissurePoints(kind, step) {
+  const out = [];
+  for (const [w, pts] of FISSURE_KINDS[kind].paths) {
+    if (pts.length < 2) { out.push({ x: pts[0][0], y: pts[0][1], w }); continue; }
+    const lens = pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1])), total = lens.reduce((a, b) => a + b, 0);
+    for (let d = step / 2; d < total; d += step) {
+      let i = 0, left = d;
+      while (left > lens[i]) left -= lens[i++];
+      const k = left / lens[i];
+      out.push({ x: pts[i][0] + (pts[i + 1][0] - pts[i][0]) * k, y: pts[i][1] + (pts[i + 1][1] - pts[i][1]) * k, w: fissureWidth(w, pts, d / total) });
+    }
+  }
+  return out;
+}
+const STREWN_CELLS = ['C1', 'D1', 'C2', 'D2', 'C3', 'D3'], STREWN_CLEAR = 5 * UNITS_PER_M;
+const FISSURES_EACH = 14; // (cracks in each sector)
+// Ravens, each on its own on the ground round the sectors (see client.js: they fly off as he comes): each
+// { flock (which it's with), home (its point on the ball), dir (which way it faces) }
+export const RAVENS = [];
+const RAVEN_FLOCKS = 8; // (ravens in each sector, each on its own) // (meters from anything already there)
+const STREWN_AWAY = [[STRUCTURES, 22], [WRECK, 18], [HUGE_THING, 12], [EQUIPMENT, 8], [OBJECTS.find((o) => o.name === 'pod'), 14]]; // (and from these, meters)
+{
+  const taken = OBJECTS.filter((o) => !o.later).map((o) => ({ x: o.x, y: o.y }));
+  const strew = (KINDS, each, seed) => {
+    const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+    for (const cell of STREWN_CELLS)
+      for (let n = 0, tries = 0; n < each && tries < 200; tries++) {
+        const at = chartPoint(CHART0, cellPoint(cell, 0.05 + 0.9 * random(), 0.05 + 0.9 * random()));
+        const kinds = Object.keys(KINDS), kind = kinds[Math.floor(random() * kinds.length)];
+        if (taken.some((p) => Math.hypot(p.x - at.x, p.y - at.y) < STREWN_CLEAR)) continue;
+        if (STREWN_AWAY.some(([p, m]) => Math.hypot(p.x - at.x, p.y - at.y) < m * UNITS_PER_M)) continue;
+        const name = `${kind.split('_')[0]}_${cell}_${n}`, [r, cover] = KINDS[kind], solid = { ...at, r: r * UNITS_PER_M, cover, of: name };
+        OBJECTS.push({ name, sprite: kind, ...at, solid });
+        OBSTACLES.push(solid);
+        taken.push(at);
+        n++;
+      }
+  };
+  strew(CACTUS_KINDS, 24, 7);
+  strew(ROCK_KINDS, 16, 11);
+  // The cracks: flat, FISSURES_EACH in each sector, as clear of everything; solid circles along them
+  let seed = 23;
+  const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  for (const cell of STREWN_CELLS)
+    for (let n = 0, tries = 0; n < FISSURES_EACH && tries < 500; tries++) {
+      const at = chartPoint(CHART0, cellPoint(cell, 0.05 + 0.9 * random(), 0.05 + 0.9 * random()));
+      const kinds = Object.keys(FISSURE_KINDS), kind = kinds[Math.floor(random() * kinds.length)];
+      if (taken.some((p) => Math.hypot(p.x - at.x, p.y - at.y) < STREWN_CLEAR + 2 * UNITS_PER_M)) continue;
+      if (STREWN_AWAY.some(([p, m]) => Math.hypot(p.x - at.x, p.y - at.y) < m * UNITS_PER_M)) continue;
+      const name = `fissure_${cell}_${n}`, circles = fissurePoints(kind, 0.5).filter((c) => c.w > 0.12);
+      const solids = circles.map((c) => ({ x: at.x + c.x * UNITS_PER_M, y: at.y + c.y * UNITS_PER_M, r: (c.w + 0.12) * UNITS_PER_M, of: name }));
+      OBJECTS.push({ name, sprite: kind, ...at, flat: true, solid: solids.reduce((a, b) => (b.r > a.r ? b : a)) });
+      OBSTACLES.push(...solids);
+      taken.push(at);
+      n++;
+    }
+  // The ravens: RAVEN_FLOCKS in each sector, each on its own, on a spot clear of things
+  for (const cell of STREWN_CELLS)
+    for (let n = 0, tries = 0; n < RAVEN_FLOCKS && tries < 200; tries++) {
+      const at = chartPoint(CHART0, cellPoint(cell, 0.05 + 0.9 * random(), 0.05 + 0.9 * random()));
+      if (taken.some((p) => Math.hypot(p.x - at.x, p.y - at.y) < 3 * UNITS_PER_M)) continue;
+      if (STREWN_AWAY.some(([p, m]) => Math.hypot(p.x - at.x, p.y - at.y) < m * UNITS_PER_M)) continue;
+      const flock = `${cell}_${n}`, birds = 1; // (each on its own)
+      for (let i = 0; i < birds; i++) {
+        const a = random() * Math.PI * 2, d = (0.3 + random() * 1.2) * UNITS_PER_M, x = at.x + Math.cos(a) * d, y = at.y + Math.sin(a) * d;
+        RAVENS.push({ flock, home: toSphere(CHART0, x - SPAWN.x, y - SPAWN.y, PLANET_R), dir: Math.floor(random() * 8) });
+      }
+      n++;
+    }
+}
 
 // Safe zones round the escape pod and the backpack (overlapping: the way between them is safe too),
-// and round the structures: bugs only come for the hero when he's out of them
-// all; they don't turn up in them (see client.js). { at (what it's round: anything kept on the chart with an x, y), r (world units) }
+// and round the structures, the egg and the equipment: bugs only come for the hero when he's out of them
+// all; they don't turn up in them (see client.js). { at (what it's round: anything kept on the chart with an x, y), r (world units),
+// until (what ends it, if anything does: 'map', the map opened at its cue; 'egg', the egg burst; 'equipment', the fellow's crate picked up) }
 export const SAFE_ZONES = [
-  { at: OBJECTS.find((o) => o.name === 'pod'), r: 12 * UNITS_PER_M },
-  { at: OBJECTS.find((o) => o.name === 'backpack'), r: 11 * UNITS_PER_M },
+  { at: OBJECTS.find((o) => o.name === 'pod'), r: 12 * UNITS_PER_M, until: 'map' },
+  { at: OBJECTS.find((o) => o.name === 'backpack'), r: 11 * UNITS_PER_M, until: 'map' },
   { at: STRUCTURES, r: 10 * UNITS_PER_M },
-  { at: OBJECTS.find((o) => o.id === 'pole_fire'), r: 10 * UNITS_PER_M },
+  { at: OBJECTS.find((o) => o.name === 'egg'), r: 10 * UNITS_PER_M, until: 'egg' },
+  { at: EQUIPMENT, r: 8 * UNITS_PER_M, until: 'equipment' },
+  { at: WRECK, r: 16 * UNITS_PER_M }, // (big: the whole wreck and well round it)
 ];
 
 // Their places on the planet: each object at a point of the ball (home); each solid circle at an
@@ -302,7 +502,7 @@ function chartPoint(chart, home) {
 
 // Puts the objects (and the structures' place) and the solid circles on the chart (where they are on it now)
 export function placeOnChart(chart) {
-  for (const o of [...OBJECTS, STRUCTURES, HUGE_THING]) Object.assign(o, chartPoint(chart, o.home));
+  for (const o of [...OBJECTS, STRUCTURES, HUGE_THING, EQUIPMENT, WRECK, MOTHER_AT]) Object.assign(o, chartPoint(chart, o.home));
   for (const ob of OBSTACLES) {
     const parent = OBJECTS.find((o) => (o.id ?? o.name) === ob.of);
     if (!parent) continue; // added later, on no object (a crater's): the client carries it
@@ -349,14 +549,14 @@ export function removeObstacle(o) {
 // Moves player p in place by direction (dx, dy) over dt seconds. Solid circles push the feet back out
 // along their normal, so running into one at an angle slides round it (a test per axis would stop
 // dead on a diagonal). There's no edge: the world is round.
-export function move(p, dx, dy, dt, speed = SPEED) {
+export function move(p, dx, dy, dt, speed = SPEED, r = PLAYER_SIZE / 2) { // (r: how far it keeps off solid things)
   const len = Math.hypot(dx, dy);
   if (len === 0) return;
   if (len > 1) { dx /= len; dy /= len; }
   let nx = p.x + dx * speed * dt, ny = p.y + dy * speed * dt;
   for (let pass = 0; pass < 2; pass++) // twice: pushed out of one circle into the next (the bed's row)
     for (const o of OBSTACLES) {
-      const ox = nx - o.x, oy = ny - o.y, d = Math.hypot(ox, oy), min = o.r + PLAYER_SIZE / 2;
+      const ox = nx - o.x, oy = ny - o.y, d = Math.hypot(ox, oy), min = o.r + r;
       if (d >= min) continue;
       if (d < 1e-6) return; // right on its center: nowhere to slide
       nx = o.x + (ox / d) * min;
