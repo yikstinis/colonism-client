@@ -38,7 +38,7 @@ shows it as a globe turning under the hero, the capsule marked on it.
   the hero is a smooth 3D body (`tools/lib/sdf-body.mjs`) rendered into pixel art, and so are the landing capsule,
   the backpack, the wrecked army bed by it, a crate of bottles to shoot, past it a smashed bedside table and a punching bag to try the knife on.
   Over the sectors round here stand little volcanoes (`VOLCANO_KINDS` in `shared/world.js`), only for the look of it: squat cones of dark slag with green or yellow acid boiling in the crater, its reek pouring out of it and lying round the foot as a fog.
-  Out in the West (sector D2) lies the fellow's equipment: a waist-high wooden crate with test tubes and flasks packed in it, a stone desert well by it, in a safe zone of their own; hold E to pick the crate up.
+  Out in the West (sector D2) lies the fellow's equipment: a waist-high wooden crate with test tubes and flasks packed in it, by it a research station (a lattice mast with a satellite dish, a transformer at its foot) on old asphalt, in a safe zone of their own; hold E to pick the crate up. A map is packed in it: picking it up holds everything still till M opens the map (no minimap or M before that).
 
 Env: `PORT`.
 

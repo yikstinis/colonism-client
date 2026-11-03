@@ -1,6 +1,6 @@
 // The backpack: its window (B), open from the moment he's picked it up and its cue held him (see
-// client.js), over the middle of the screen while the game holds, as the character's is (see
-// character.js). Its slots in a row, square as the hotbar's (see hotbar.js), each its name under it;
+// client.js), over the middle of the screen while the game holds, as the talents' is (see
+// talents.js). Its slots in a row, square as the hotbar's (see hotbar.js), each its name under it;
 // for now only the first: medicine, the medkits he has (its count in its bottom right corner, dim when
 // there are none).
 

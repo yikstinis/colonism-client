@@ -1,7 +1,7 @@
 // Generates the game art (top-down view, camera 70 degrees) into public/assets/ plus sprites.json.
 //   npm run art              everything (~3 min)
 //   (the heroes' frames are drawn on all the cores: a worker thread each, WORKERS=n to say how many)
-//   ONLY=pod npm run art     just some parts (hero, hero_pack, pod, backpack, bed, stand, bedding, egg, equipment, well, cactus, rock_boulder, wreck, wreck_bow, ...); the rest is kept as is
+//   ONLY=pod npm run art     just some parts (hero, hero_pack, pod, backpack, bed, stand, bedding, egg, equipment, antenna, transformer, cactus, rock_boulder, wreck, wreck_bow, ...); the rest is kept as is
 // Real art can replace the PNGs later as long as it keeps the layout from sprites.json.
 
 import fs from 'node:fs';
@@ -13,7 +13,7 @@ import { ramp, rng, Sheet } from './lib/image.mjs';
 import { SHADOW_LIGHT, bodySdf, box, capsule, cone, ellipsoid, renderBody, renderShadow } from './lib/sdf-body.mjs';
 import {
   AIM_IN_TIME, AIM_OFFSETS, AIM_OUT_TIME, BACKPACK, BUG_BITE_SNAP, BUG_BITE_TIME, RELOAD_TIME, CROUCH_CYCLE, BED, BEDDING, BEDDING_FIRES, BLANKET, FIRE_ROUNDS, GAIT_CYCLE, GLADE_R, MATTRESS, PICK_GRAB,
-  CRATER_R, PICK_TIME, PILLOW, POD, POD_FIRES, POD_SCALE, ROLL_TIME, STRIKE_SLANT, STRIKE_WAY, SLASH_TIME, STAND, TURRET_FRAMES, GARAGE, GARAGE_SIZE, GARAGE_LEAF, EGG_R, WRECK_PIECES, WRECK_SHIP, WRECK_SHOWN, wreckJag, CONTAINER_KINDS, FISSURE_KINDS, fissurePoints, fissureWidth, VOLCANO_KINDS,
+  CRATER_R, PICK_TIME, PILLOW, POD, POD_FIRES, POD_SCALE, ROLL_TIME, STRIKE_SLANT, STRIKE_WAY, SLASH_TIME, STAND, TURRET_FRAMES, GARAGE, GARAGE_SIZE, GARAGE_LEAF, EGG_R, WRECK_PIECES, WRECK_SHIP, WRECK_SHOWN, wreckJag, CONTAINER_KINDS, FISSURE_KINDS, fissurePoints, fissureWidth, VOLCANO_KINDS, FENCE, FENCE_YAWS, FENCE_KINDS, FENCE_LEANS, BARREL_R, SAFE_RECT, GARDEN, EGG_SAFE_R, STATION_SAFE_R, TRANSFORMER_SIZE, POD_SAFE_R, BACKPACK_SAFE_R, UNITS_PER_M,
 } from '../shared/world.js';
 
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets');
@@ -2283,79 +2283,377 @@ function makeEquipment() {
   };
 }
 
-// ---------- By the fellow's crate: a desert well, a ring of rough stones round a dark hole ----------
+// Smooth noise (0..1), a unit a cell; fbm: a few of it, finer and finer (for the ground's decals)
+const vnoise = (x, y, seed) => {
+  const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const v = (i, j) => hash(i * 7.1 + seed * 13.3, j * 3.7 - seed * 5.9);
+  return v(x0, y0) * (1 - sx) * (1 - sy) + v(x0 + 1, y0) * sx * (1 - sy) + v(x0, y0 + 1) * (1 - sx) * sy + v(x0 + 1, y0 + 1) * sx * sy;
+};
+const fbm = (x, y, seed) => 0.55 * vnoise(x, y, seed) + 0.3 * vnoise(x * 2.1, y * 2.1, seed + 1) + 0.15 * vnoise(x * 4.3, y * 4.3, seed + 2);
 
-const WELL_W = 84, WELL_H = 80, WELL_ANCHOR = [42, 46];
-const WELL_SHADOW_W = 130, WELL_SHADOW_H = 100, WELL_SHADOW_ANCHOR = [65, 50];
-const WELL_RAMPS = [
-  ramp('#1c150d', '#2e2316', '#423220', '#57432b', '#6d5537', '#836844', '#997c53', '#ae9163'), // sandstone
-  ramp('#141210', '#211e1a', '#302c26', '#403a33', '#514a41', '#635b50', '#766d60', '#898071'), // grey stone
-  ramp('#1d0f08', '#2f190d', '#432413', '#583019', '#6d3d20', '#834b28', '#985a31', '#ad6a3b'), // red stone
-  ramp('#000000', '#030303', '#060607', '#0a0a0b', '#0e0e10', '#131315', '#18181b', '#1e1e21'), // the hole: dark down there
-  ramp('#020407', '#04080d', '#060c14', '#09121c', '#0d1925', '#12212f', '#182b3b', '#203749'), // a little water at its bottom
-];
-const [W_SAND, W_GREY, W_RED, W_HOLE, W_WATER] = [0, 1, 2, 3, 4];
-const WELL_R = 0.62, WELL_COURSES = 4; // meters: its stones' ring (their middles); how many courses high
+// ---------- Round the huge thing, as far as its safe zone: loose earth, dug up and churned ----------
 
-// Model space, meters: courses of rough stones round its middle, each course's set over the gaps of the
-// one under it, a few bigger ones on top; inside, a dark hole, water glinting at the bottom; a few
-// stones fallen off lying on the sand
-function wellModel() {
-  const parts = WELL_RAMPS.map(() => []);
-  const r = rng(17), kinds = [W_SAND, W_SAND, W_GREY, W_RED];
-  const stone = (a, rad, z, h) => {
-    const t = [-Math.sin(a), Math.cos(a), 0], n = [Math.cos(a), Math.sin(a), 0];
-    parts[kinds[Math.floor(r() * kinds.length)]].push(box([n[0] * rad, n[1] * rad, z], [n, t, [0, 0, 1]], h, 0.035));
+// A decal (as the game lays the ground out), EGG_SAFE_R round: dark earth, lumpy, clods of it lying about
+// (lit from above, their shadows under them), patches darker and paler; thinning out at its ragged edge,
+// dithered into the sand. to: [dx, dy, R2] (meters), it stretches out that far to there instead, R2
+// round there (as a tapered capsule: the pod's and the backpack's both, no gap where they'd meet)
+function makeLooseEarth(R = EGG_SAFE_R, name = 'loose_earth', seed = 0, to = null) {
+  const [tx, ty, R2] = to ?? [0, 0, R], M = Math.max(R, R2) + 0.6;
+  const x0 = Math.min(0, tx) - M, y0 = Math.min(0, ty) - M, W = Math.ceil((Math.max(0, tx) + M - x0) * PX_PER_M), H = Math.ceil((Math.max(0, ty) + M - y0) * PX_PER_M);
+  const anchor = [Math.round(-x0 * PX_PER_M), Math.round(-y0 * PX_PER_M)], LL = tx * tx + ty * ty;
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const out = new Uint8ClampedArray(W * H * 4), CLOD = 0.2; // (meters: a cell, a clod in some)
+  const clodAt = (x, y) => { // the clod in the cell (x, y) is in, if one: its middle, radius
+    const cx = Math.floor(x / CLOD), cy = Math.floor(y / CLOD);
+    if (hash(cx + 300, cy - 200) < 0.62) return null;
+    return [(cx + 0.3 + 0.4 * hash(cx, cy + 9)) * CLOD, (cy + 0.3 + 0.4 * hash(cx + 9, cy)) * CLOD, CLOD * (0.18 + 0.2 * hash(cx - 5, cy + 5))];
   };
-  for (let c = 0; c < WELL_COURSES; c++) {
-    const n = 13, z = 0.09 + c * 0.16;
-    for (let k = 0; k < n; k++) {
-      const a = ((k + (c % 2) * 0.5 + (r() - 0.5) * 0.15) * Math.PI * 2) / n;
-      stone(a, WELL_R + (r() - 0.5) * 0.04, z + (r() - 0.5) * 0.02, [0.12 + r() * 0.03, 0.13 + r() * 0.04, 0.075 + r() * 0.015]);
+  for (let py = 0; py < H; py++)
+    for (let px = 0; px < W; px++) {
+      const gx = (px + 0.5 - anchor[0]) / PX_PER_M, gy = (py + 0.5 - anchor[1]) / PX_PER_M, at = (py * W + px) * 4;
+      const f = LL ? Math.max(0, Math.min(1, (gx * tx + gy * ty) / LL)) : 0, ex = gx - tx * f, ey = gy - ty * f; // (from the nearest point along it)
+      const th = (BAYER4[(py % 4) * 4 + (px % 4)] + 0.5) / 16, d = Math.hypot(ex, ey), a = Math.atan2(ey, ex) + f * 2.3;
+      const rim = R + (R2 - R) * f - 0.6 + 1.4 * (fbm(Math.cos(a) * 3 + 10, Math.sin(a) * 3, 41 + seed) - 0.5) + 0.5 * (fbm(gx * 0.8, gy * 0.8, 43 + seed) - 0.5);
+      const k = Math.max(0, Math.min(1, (rim - d) / 2.2)); // (1 well in, 0 past its edge)
+      const patch = fbm(gx * 0.35 + 3, gy * 0.35, 45), fine = hash(px, py);
+      if (th >= k * (0.7 + 0.5 * patch)) continue; // (thinning out into the sand)
+      let col = [40 + Math.round(patch * 14), 34 + Math.round(patch * 12), 30 + Math.round(patch * 10)];
+      if (fine > 0.9) col = col.map((v) => v + 10); else if (fine < 0.08) col = col.map((v) => v - 8); // (its grit)
+      // The clods: lit on top, dark at their feet
+      for (const [ox, oy] of [[0, 0], [0, -CLOD], [-CLOD, 0], [0, CLOD], [CLOD, 0]]) {
+        const c = clodAt(gx + ox, gy + oy);
+        if (!c) continue;
+        const [cx, cy, cr] = c, dx = gx - cx, dy = gy - cy, dd = Math.hypot(dx, dy);
+        if (dd < cr) { col = dy < -cr * 0.25 ? [78, 68, 58] : [56, 48, 42]; break; }
+        if (dy > 0 && Math.hypot(dx - 0.02, dy - cr * 0.7) < cr * 0.9) col = [24, 20, 18]; // (its shadow)
+      }
+      out.set([...col, 255], at);
     }
+  const sh = new Sheet(W, H);
+  sh.blit(out, W, H, 0, 0);
+  save(sh, `${name}.png`);
+  save(new Sheet(1, 1), `${name}_none.png`); // (no body: all of it a decal)
+  return { image: `${name}_none.png`, frame: [1, 1], anchor: [0, 0], decal: { image: `${name}.png`, frame: [W, H], anchor } };
+}
+
+// ---------- Inside the safe space's fence: old asphalt, cracked, crumbling at its edges, drifted over with sand ----------
+
+// A decal (as the game lays the ground out: a meter down the screen as long as one across), turned as the
+// garage is, as big as the fence's rectangle (SAFE_RECT). Where sand's drifted over it, nothing: the
+// ground's own sand shows through there (dithered at the drifts' edges)
+// round: a disc that far round instead (meters: the research station's), no parking lines on it
+function makeAsphalt(name = 'asphalt', round = 0) {
+  const { w, h } = round ? { w: round, h: round } : SAFE_RECT, yaw = round ? 0 : GARAGE.yaw, c = Math.cos(yaw), s = Math.sin(yaw);
+  const ext = (w * Math.abs(c) + h * Math.abs(s)) + 0.2, eyt = (w * Math.abs(s) + h * Math.abs(c)) + 0.2;
+  const W = Math.ceil(2 * ext * PX_PER_M), H = Math.ceil(2 * eyt * PX_PER_M), anchor = [Math.round(W / 2), Math.round(H / 2)];
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const out = new Uint8ClampedArray(W * H * 4);
+  // Its cracks: the edges between cells (jittered, a cell every CELL meters), not all of them
+  const CELL = 1.7;
+  const cracks = (x, y) => {
+    const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+    let d1 = 1e9, d2 = 1e9, id1 = 0, id2 = 0;
+    for (let j = -1; j <= 1; j++)
+      for (let i = -1; i <= 1; i++) {
+        const gx = cx + i, gy = cy + j, px = (gx + 0.15 + 0.7 * hash(gx, gy + 40)) * CELL, py = (gy + 0.15 + 0.7 * hash(gx + 40, gy)) * CELL;
+        const d = Math.hypot(x - px, y - py), id = gx * 1000 + gy;
+        if (d < d1) { d2 = d1; id2 = id1; d1 = d; id1 = id; } else if (d < d2) { d2 = d; id2 = id; }
+      }
+    const pair = hash(Math.min(id1, id2) * 0.37, Math.max(id1, id2) * 0.71); // (which edges crack: some)
+    return pair < 0.6 ? d2 - d1 : 1e9;
+  };
+  for (let py = 0; py < H; py++)
+    for (let px = 0; px < W; px++) {
+      const gx = (px + 0.5 - anchor[0]) / PX_PER_M, gy = (py + 0.5 - anchor[1]) / PX_PER_M;
+      const mx = gx * c + gy * s, my = -gx * s + gy * c; // (in the garage's model, from the middle)
+      const th = (BAYER4[(py % 4) * 4 + (px % 4)] + 0.5) / 16, at = (py * W + px) * 4, n = hash(px, py);
+      const edge = round ? round - Math.hypot(mx, my) - 0.6 * (fbm(Math.atan2(my, mx) * 2 + 20, 5, 71) - 0.5) : Math.min(w - Math.abs(mx), h - Math.abs(my)); // (meters in from the fence; round: from its ragged rim)
+      // Its edge broken off ragged, crumbs of it lying past it
+      const rag = 0.25 + 0.35 * fbm(mx * 1.3 + 7, my * 1.3 - 3, 3);
+      if (edge < rag) {
+        if (edge > rag - 0.3 && hash(Math.floor(mx * 9), Math.floor(my * 9)) > 0.86) out.set([52, 51, 54, 255], at);
+        continue;
+      }
+      // Sand drifted over it: in long drifts along the wind, thicker out by its edges
+      const drift = fbm(mx * 0.45 + my * 0.12, my * 0.9 - mx * 0.05, 9) + 0.32 * Math.max(0, 1 - (edge - rag) / 1.6) + 0.12 * (fbm(mx * 2.5, my * 2.5, 21) - 0.5);
+      const SAND = 0.66;
+      if (drift > SAND + 0.04) continue;
+      if (drift > SAND - 0.04 && th < (drift - (SAND - 0.04)) / 0.08) continue;
+      const dusty = Math.max(0, drift - 0.45) / (SAND - 0.45); // (a thin dust of it near the drifts)
+      let col;
+      {
+        // The asphalt: dark, worn paler in patches, its stones showing; cracks across it, sand in them
+        const wear = fbm(mx * 0.6 + 40, my * 0.6, 5), grain = n;
+        const base = 40 + Math.round(wear * 12) + (grain > 0.86 ? 14 : grain < 0.1 ? -8 : 0);
+        col = [base, base, base + 3];
+        if (cracks(mx, my) < 0.035 + 0.02 * vnoise(mx * 3, my * 3, 51)) col = hash(Math.floor(mx * 12), Math.floor(my * 12)) > 0.6 ? [70, 64, 58] : [20, 20, 22]; // (some full of sand)
+        // Old parking lines, by the garage, faded, worn through
+        const lane = mx - 1.6;
+        if (!round && lane > 0 && lane < 9 && my > -4.5 && my < 2.5 && Math.abs(lane - Math.round(lane / 2.6) * 2.6) < 0.06 && vnoise(mx * 2, my * 2, 61) > 0.45 && th < 0.75) col = [112, 110, 98];
+        if (dusty > 0 && th < dusty * 0.5) col = col.map((v, i) => Math.round(v + ([86, 76, 64][i] - v) * 0.45)); // (dust on it)
+      }
+      out.set([...col, 255], at);
+    }
+  const sh = new Sheet(W, H);
+  sh.blit(out, W, H, 0, 0);
+  save(sh, `${name}.png`);
+  save(new Sheet(1, 1), `${name}_none.png`); // (it has no body: all of it lies under everything, as a decal)
+  return { image: `${name}_none.png`, frame: [1, 1], anchor: [0, 0], decal: { image: `${name}.png`, frame: [W, H], anchor } };
+}
+
+// ---------- By the garage's right wall: the fellow's little garden bed ----------
+
+const GARDEN_W = 84, GARDEN_H = 90, GARDEN_ANCHOR = [42, 46];
+const GARDEN_SHADOW_W = 100, GARDEN_SHADOW_H = 100, GARDEN_SHADOW_ANCHOR = [50, 50];
+const GARDEN_RAMPS = [
+  ramp('#16110c', '#221a12', '#2f2419', '#3d2f21', '#4b3a2a', '#5a4633', '#69533d', '#796148'), // the planks: old, grey-brown
+  ramp('#0b0806', '#120d09', '#19120d', '#211811', '#291e15', '#32251a', '#3b2c1f', '#453425'), // the earth: dug, dark
+  ramp('#0e180a', '#16240f', '#1f3214', '#29411a', '#345121', '#406229', '#4d7332', '#5b853c'), // leaves
+  ramp('#1c2a10', '#2a3d17', '#38501e', '#476426', '#57782f', '#688c39', '#7aa045', '#8db452'), // leaves in the light
+  ramp('#2a2620', '#3a352d', '#4b453b', '#5d564a', '#6f685a', '#827a6b', '#958d7d', '#a9a190'), // the sticks they're tied to, a label
+];
+const [GD_WOOD, GD_EARTH, GD_LEAF, GD_LEAF_LIT, GD_STICK] = [0, 1, 2, 3, 4];
+
+// Model space, meters (x across it, y along it): a frame of planks round it, each a little askew, nailed
+// at the corners; dug earth inside, heaped in two ridges; on each, a row of bushy plants, some bigger,
+// some wilting; a stick by a few of them, one with a label on it
+function gardenModel() {
+  const [hw, hl] = GARDEN.half, r = rng(271), parts = GARDEN_RAMPS.map(() => []), T = 0.04, HIGH = 0.2;
+  for (const s of [-1, 1]) {
+    parts[GD_WOOD].push(box([s * (hw - T), 0, HIGH / 2], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [T, hl, HIGH / 2], 0.008)); // its long sides
+    parts[GD_WOOD].push(box([0, s * (hl - T), HIGH / 2 - 0.01], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [hw, T, HIGH / 2 - 0.01], 0.008)); // its ends
   }
-  for (let k = 0; k < 9; k++) stone(((k + r() * 0.3) * Math.PI * 2) / 9, WELL_R, 0.09 + WELL_COURSES * 0.16 - 0.03, [0.15, 0.19 + r() * 0.04, 0.06]); // (its top: flat capstones)
-  parts[W_HOLE].push(cone([0, 0, 0], [0, 0, 0.02], WELL_R - 0.08, WELL_R - 0.08)); // the hole (the ground inside: as dark as it is deep)
-  parts[W_WATER].push(ellipsoid([0.05, 0.08, 0.025], [0.3, 0.26, 0.012]));
-  for (const [x, y, a] of [[0.95, 0.35, 0.4], [-0.85, 0.55, 1.2], [0.6, -0.8, 2.0]]) parts[kinds[Math.floor(r() * 3)]].push(box([x, y, 0.06], flatTurn(a), [0.11, 0.09, 0.06], 0.035)); // fallen off
-  const fields = parts.map((prims) => bodySdf([{ k: 0.004, prims }], 0.004));
+  for (const x of [-hw * 0.4, hw * 0.4]) parts[GD_EARTH].push(capsule([x, -hl + 0.22, 0.05], [x, hl - 0.22, 0.05], 0.13)); // the ridges
+  parts[GD_EARTH].push(box([0, 0, 0.06], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [hw - 0.05, hl - 0.05, 0.06], 0.02));
+  for (const x of [-hw * 0.4, hw * 0.4])
+    for (let y = -hl + 0.25; y < hl - 0.15; y += 0.33) {
+      const big = 0.7 + r() * 0.6, wilt = r() < 0.2, px = x + (r() - 0.5) * 0.06, py = y + (r() - 0.5) * 0.08;
+      for (let k = 0; k < 5; k++) { // a bush of leaves round its stem
+        const a = (k / 5) * Math.PI * 2 + r(), d = 0.06 * big;
+        const c = [px + Math.cos(a) * d, py + Math.sin(a) * d, 0.2 + (wilt ? -0.06 : 0.04) * big + r() * 0.04];
+        parts[k % 2 ? GD_LEAF_LIT : GD_LEAF].push(ellipsoid(c, [0.07 * big, 0.06 * big, (wilt ? 0.03 : 0.05) * big]));
+      }
+      if (r() < 0.35) parts[GD_STICK].push(capsule([px + 0.07, py, 0.15], [px + 0.07, py, 0.45], 0.01)); // a stick by it
+    }
+  parts[GD_STICK].push(box([hw * 0.4 + 0.08, -hl + 0.12, 0.33], [[1, 0, 0], [0, 0, 1], [0, -1, 0]], [0.05, 0.035, 0.005], 0.002)); // a label, at its end
+  const fields = parts.map((prims) => bodySdf([{ k: 0.01, prims }], 0.01));
+  const shape = (x, y, z) => Math.min(...fields.map((f) => f(x, y, z)));
   return {
-    shape: (x, y, z) => Math.min(...fields.map((f) => f(x, y, z))),
-    sdf: (x, y, z) => Math.max(Math.min(...fields.map((f) => f(x, y, z))), -z),
+    shape,
+    sdf: (x, y, z) => Math.max(shape(x, y, z), -z),
     material: (x, y, z) => {
       let best = 0, d = 1e9;
       fields.forEach((f, i) => { const v = f(x, y, z); if (v < d) { d = v; best = i; } });
-      if (best === W_HOLE && Math.hypot(x, y) > WELL_R - 0.2 && z > 0.05) return W_HOLE; // (inner faces: in the dark)
-      if (best <= W_RED && Math.hypot(x, y) < WELL_R - 0.1) return W_HOLE; // the stones' insides, down the hole, in the dark
-      if (best <= W_RED && hash(Math.floor(x * 70), Math.floor(y * 70 + z * 50)) < 0.12) return W_GREY; // pits and lichen
+      if (best === GD_EARTH && hash(Math.floor(x * 40), Math.floor(y * 40)) > 0.9) return GD_WOOD; // (clods, bits of straw)
+      if (best === GD_WOOD && Math.abs(Math.abs(y) - (GARDEN.half[1] - 0.04)) < 0.03 && Math.abs(Math.abs(x) - (GARDEN.half[0] - 0.04)) < 0.03) return GD_STICK; // (nails at its corners)
       return best;
     },
   };
 }
 
-function makeWell() {
-  const model = wellModel();
+function makeGarden() {
+  const model = gardenModel();
   const img = renderBody(model.sdf, {
-    W: WELL_W, H: WELL_H, anchor: WELL_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
-    camDist: 5.5, focusZ: 0.9, ramps: WELL_RAMPS, material: model.material, outline: [10, 7, 5], bound: [0.35, 1.25],
+    W: GARDEN_W, H: GARDEN_H, anchor: GARDEN_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: GARAGE.yaw, trueGround: true,
+    camDist: 5.5, focusZ: 0.9, ramps: GARDEN_RAMPS, material: model.material, outline: [8, 7, 6], bound: [0.2, 1.3],
   });
-  const sh = new Sheet(WELL_W, WELL_H);
-  sh.blit(img, WELL_W, WELL_H, 0, 0);
-  save(sh, 'well.png');
+  const sh = new Sheet(GARDEN_W, GARDEN_H);
+  sh.blit(img, GARDEN_W, GARDEN_H, 0, 0);
+  save(sh, 'garden.png');
   const shadow = renderShadow(model.shape, {
-    W: WELL_SHADOW_W, H: WELL_SHADOW_H, anchor: WELL_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
-    camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55,
+    W: GARDEN_SHADOW_W, H: GARDEN_SHADOW_H, anchor: GARDEN_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: GARAGE.yaw, trueGround: true,
+    camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55, reach: 1.4,
   });
-  const ss = new Sheet(WELL_SHADOW_W, WELL_SHADOW_H);
-  ss.blit(shadow, WELL_SHADOW_W, WELL_SHADOW_H, 0, 0);
-  save(ss, 'well_shadow.png');
+  const ss = new Sheet(GARDEN_SHADOW_W, GARDEN_SHADOW_H);
+  ss.blit(shadow, GARDEN_SHADOW_W, GARDEN_SHADOW_H, 0, 0);
+  save(ss, 'garden_shadow.png');
   return {
-    image: 'well.png', frame: [WELL_W, WELL_H], anchor: WELL_ANCHOR,
-    shadow: { image: 'well_shadow.png', frame: [WELL_SHADOW_W, WELL_SHADOW_H], anchor: WELL_SHADOW_ANCHOR },
+    image: 'garden.png', frame: [GARDEN_W, GARDEN_H], anchor: GARDEN_ANCHOR,
+    shadow: { image: 'garden_shadow.png', frame: [GARDEN_SHADOW_W, GARDEN_SHADOW_H], anchor: GARDEN_SHADOW_ANCHOR },
   };
 }
 
-// ---------- Cacti: by the well, a tall one with its arms up and a squat round one; round the wreck, those and more ----------
+// ---------- By the garage's front corner: a rusty steel drum ----------
+
+const BARREL_W = 44, BARREL_H = 50, BARREL_ANCHOR = [22, 34];
+const BARREL_SHADOW_W = 60, BARREL_SHADOW_H = 50, BARREL_SHADOW_ANCHOR = [30, 25];
+const BARREL_RAMPS = [
+  ramp('#13252c', '#1c3540', '#264654', '#315868', '#3d6a7b', '#4b7d8e', '#5c91a1', '#72a7b5'), // its paint: a faded blue
+  ramp('#1a0e08', '#2a160b', '#3c200f', '#4f2b14', '#62371a', '#754421', '#875229', '#996133'), // rust
+  ramp('#060505', '#0b0a09', '#11100e', '#181614', '#1f1c19', '#27231f', '#2f2a25', '#38322c'), // its bung hole, dark
+];
+const BARREL_HIGH = 0.88; // meters
+
+// Model space, meters: a drum, its two rolling hoops and the rim round its lid standing out; dented a
+// little on one side; rust eating it from the bottom up, in streaks down from the rim, round the hoops
+function barrelModel() {
+  const R = BARREL_R, prims = [cone([0, 0, 0], [0, 0, BARREL_HIGH], R, R)];
+  for (const z of [0.29, 0.59]) prims.push(cone([0, 0, z - 0.015], [0, 0, z + 0.015], R + 0.012, R + 0.012)); // the hoops
+  prims.push(cone([0, 0, BARREL_HIGH - 0.02], [0, 0, BARREL_HIGH + 0.012], R + 0.008, R + 0.008)); // the rim
+  const body = bodySdf([{ k: 0.004, prims }], 0.004);
+  const dent = ellipsoid([R * 0.9, -R * 0.45, 0.45], [0.12, 0.12, 0.16]), dentSdf = bodySdf([{ k: 0.01, prims: [dent] }], 0.01);
+  const lid = bodySdf([{ k: 0.01, prims: [cone([0, 0, BARREL_HIGH - 0.01], [0, 0, BARREL_HIGH + 0.05], R - 0.03, R - 0.03)] }], 0.01);
+  const shape = (x, y, z) => Math.max(body(x, y, z), -dentSdf(x, y, z) + 0.02, -lid(x, y, z));
+  return {
+    shape,
+    sdf: (x, y, z) => Math.max(shape(x, y, z), -z),
+    material: (x, y, z) => {
+      const rr = Math.hypot(x, y), a = Math.atan2(y, x), n = hash(Math.floor(a * 14 + 20), Math.floor(z * 30));
+      if (z > BARREL_HIGH - 0.03 && rr < R - 0.02) return Math.hypot(x - R * 0.5, y + R * 0.2) < 0.045 ? 2 : hash(Math.floor(x * 30 + 9), Math.floor(y * 30 + 9)) < 0.3 ? 1 : 0; // the lid, sunk in its rim: painted, rusting, its bung hole
+      if (z < 0.08 + 0.1 * n) return 1; // rusted from the bottom up
+      if (z > BARREL_HIGH - 0.05 - 0.3 * hash(Math.floor(a * 9 + 3), 7) * (n > 0.5 ? 1 : 0)) return n > 0.35 ? 1 : 0; // streaks down from the rim
+      if ([0.29, 0.59].some((h) => Math.abs(z - h) < 0.025) && n > 0.45) return 1; // round the hoops
+      return n > 0.9 ? 1 : 0;
+    },
+  };
+}
+
+function makeBarrel() {
+  const model = barrelModel();
+  const img = renderBody(model.sdf, {
+    W: BARREL_W, H: BARREL_H, anchor: BARREL_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0.4,
+    camDist: 5.5, focusZ: 0.9, ramps: BARREL_RAMPS, material: model.material, outline: [8, 8, 9], bound: [0.45, 0.7],
+  });
+  const sh = new Sheet(BARREL_W, BARREL_H);
+  sh.blit(img, BARREL_W, BARREL_H, 0, 0);
+  save(sh, 'barrel.png');
+  const shadow = renderShadow(model.shape, {
+    W: BARREL_SHADOW_W, H: BARREL_SHADOW_H, anchor: BARREL_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0.4,
+    camDist: 5.5, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55, reach: 0.9,
+  });
+  const ss = new Sheet(BARREL_SHADOW_W, BARREL_SHADOW_H);
+  ss.blit(shadow, BARREL_SHADOW_W, BARREL_SHADOW_H, 0, 0);
+  save(ss, 'barrel_shadow.png');
+  return {
+    image: 'barrel.png', frame: [BARREL_W, BARREL_H], anchor: BARREL_ANCHOR,
+    shadow: { image: 'barrel_shadow.png', frame: [BARREL_SHADOW_W, BARREL_SHADOW_H], anchor: BARREL_SHADOW_ANCHOR },
+  };
+}
+
+// ---------- By the fellow's crate: the research station, a lattice mast with a satellite dish, a transformer by it ----------
+
+const STATION_RAMPS = [
+  ramp('#15181b', '#22272b', '#323940', '#444c54', '#58616a', '#6e7780', '#868f97', '#a0a8ae'), // galvanized steel, weathered
+  ramp('#2a2a2a', '#414140', '#5a5957', '#74726e', '#8f8c86', '#aaa69e', '#c4bfb5', '#dcd7cc'), // the dish: white paint gone grey with dust
+  ramp('#1c1a17', '#2b2824', '#3b3732', '#4c4741', '#5e5850', '#706960', '#837b70', '#968d81'), // concrete
+  ramp('#12180f', '#1b2416', '#26321e', '#314027', '#3e4f31', '#4b5e3b', '#5a6e46', '#6a7f53'), // the transformer's paint: army green
+  ramp('#1c0d06', '#2e160a', '#43200e', '#592b13', '#6e3719', '#83441f', '#985226', '#ac612f'), // rust; the insulators' brown glaze
+  ramp('#2a0303', '#4a0605', '#6e0a08', '#94100c', '#b81a12', '#d8301d', '#ef5232', '#ff8458'), // the mast's red lamp
+  ramp('#2a2006', '#45350a', '#614b0f', '#7e6314', '#9b7b1b', '#b89424', '#d2ad30', '#e8c540'), // the warning sign
+  ramp('#060606', '#0b0b0b', '#111111', '#171717', '#1e1e1e', '#252525', '#2d2d2d', '#363636'), // cables, rubber
+];
+const [S_STEEL, S_DISH, S_CONCRETE, S_PAINT, S_RUST, S_LAMP, S_SIGN, S_CABLE] = [0, 1, 2, 3, 4, 5, 6, 7];
+const MAST_H = 5, MAST_R0 = 0.2, MAST_R1 = 0.09; // meters: its height, its legs' spread at the foot and at the top
+
+// Lists of fields by material, blended in each (a part made of prims), and the model made of them
+function partsModel(parts, extra = [], tweak = (best) => best) {
+  const fields = parts.map((prims) => (prims.length ? bodySdf([{ k: 0.003, prims }], 0.003) : () => 1e9));
+  for (const [i, f] of extra) { const g = fields[i]; fields[i] = (x, y, z) => Math.min(g(x, y, z), f(x, y, z)); }
+  const shape = (x, y, z) => { let d = 1e9; for (const f of fields) d = Math.min(d, f(x, y, z)); return d; };
+  return {
+    shape,
+    sdf: (x, y, z) => Math.max(shape(x, y, z), -z),
+    material: (x, y, z) => {
+      let best = 0, d = 1e9;
+      fields.forEach((f, i) => { const v = f(x, y, z); if (v < d) { d = v; best = i; } });
+      return tweak(best, x, y, z);
+    },
+  };
+}
+
+// Model space, meters: a three-legged lattice mast on a concrete footing, zigzag braces up its faces;
+// a whip antenna and a red lamp on its top; on its side, two thirds up, a satellite dish on an arm,
+// turned up to the sky (west, a little to the camera: its bowl shows), its feed on three struts; a box
+// of electronics low on it, a cable down from it into the sand (to the transformer)
+function antennaModel() {
+  const parts = STATION_RAMPS.map(() => []);
+  const legAt = (k, z) => { const a = -Math.PI / 2 + (k * Math.PI * 2) / 3, r = MAST_R0 + (MAST_R1 - MAST_R0) * (z / MAST_H); return [Math.cos(a) * r, Math.sin(a) * r, z]; };
+  parts[S_CONCRETE].push(box([0, 0, 0.08], flatTurn(0.3), [0.34, 0.34, 0.08], 0.03));
+  for (let k = 0; k < 3; k++) {
+    parts[S_STEEL].push(capsule(legAt(k, 0.1), legAt(k, MAST_H), 0.03, 0.022));
+    const STEPS = 7;
+    for (let j = 0; j < STEPS; j++) { // the braces: up each face in a zigzag, a rung at each turn
+      const z0 = 0.16 + (j * (MAST_H - 0.2)) / STEPS, z1 = 0.16 + ((j + 1) * (MAST_H - 0.2)) / STEPS;
+      const [a, b] = j % 2 ? [k, (k + 1) % 3] : [(k + 1) % 3, k];
+      parts[S_STEEL].push(capsule(legAt(a, z0), legAt(b, z1), 0.014), capsule(legAt(k, z0), legAt((k + 1) % 3, z0), 0.013));
+    }
+  }
+  parts[S_STEEL].push(capsule([0, 0, MAST_H], [0, 0, MAST_H + 0.75], 0.018, 0.01)); // the whip
+  parts[S_LAMP].push(ellipsoid([MAST_R1 * 0.5, 0.04, MAST_H + 0.06], [0.05, 0.05, 0.06]));
+  // The dish: a shell of a sphere, cut off at its rim, facing n, its back's middle at p0
+  const n = norm([-0.6, 0.45, 0.66]), p0 = [-0.3, 0.06, 3.3], RS = 0.7, RIM = 0.4, DEPTH = RS - Math.sqrt(RS * RS - RIM * RIM);
+  const sc = add(p0, mul(n, RS));
+  const dish = (x, y, z) => {
+    const q = [x - p0[0], y - p0[1], z - p0[2]];
+    return Math.max(Math.abs(Math.hypot(x - sc[0], y - sc[1], z - sc[2]) - RS) - 0.018, dot(q, n) - DEPTH);
+  };
+  const focus = add(p0, mul(n, RS * 0.5)), u = norm(cross(n, [0, 0, 1])), v = cross(u, n);
+  for (let k = 0; k < 3; k++) {
+    const a = (k * Math.PI * 2) / 3 + 0.5, rim = add(add(p0, mul(n, DEPTH)), add(mul(u, Math.cos(a) * RIM * 0.95), mul(v, Math.sin(a) * RIM * 0.95)));
+    parts[S_STEEL].push(capsule(rim, focus, 0.012));
+  }
+  parts[S_CABLE].push(box(focus, [u, v, n], [0.05, 0.05, 0.07], 0.015)); // the feed
+  parts[S_STEEL].push(capsule(add(p0, mul(n, -0.05)), [-0.08, 0, 3.22], 0.03), capsule([-0.08, 0, 3.1], [-0.08, 0, 3.35], 0.04)); // its arm, on a clamp
+  // A box of electronics low on the mast, its cable down
+  parts[S_PAINT].push(box([0, 0.2, 1.15], flatTurn(0), [0.16, 0.06, 0.2], 0.02));
+  parts[S_CABLE].push(capsule([0.1, 0.24, 0.95], [0.22, 0.32, 0.25], 0.018), capsule([0.22, 0.32, 0.25], [0.45, 0.3, 0.0], 0.018));
+  return partsModel(parts, [[S_DISH, dish]], (best, x, y, z) => {
+    if (best === S_STEEL && hash(Math.floor(x * 60 + z * 23), Math.floor(y * 60 - z * 31)) < 0.12) return S_RUST; // rust on it, here and there
+    if (best === S_DISH && hash(Math.floor(x * 25), Math.floor(y * 25 + z * 25)) < 0.04) return S_RUST; // the dish's paint flaking
+    if (best === S_CONCRETE && z < 0.03) return S_CONCRETE;
+    return best;
+  });
+}
+
+// Model space, meters: a transformer on a concrete pad: a steel tank, cooling fins down its long sides,
+// three brown bushings up off its lid, a lamp-black cable off one of them toward the mast; a yellow
+// warning sign on its front
+function transformerModel() {
+  const parts = STATION_RAMPS.map(() => []);
+  const [L, D] = TRANSFORMER_SIZE, H = 1.05, ax = flatTurn(0);
+  parts[S_CONCRETE].push(box([0, 0, 0.06], ax, [L + 0.12, D + 0.12, 0.06], 0.02));
+  parts[S_PAINT].push(box([0, 0, 0.12 + H / 2], ax, [L - 0.12, D - 0.06, H / 2], 0.03)); // the tank
+  parts[S_PAINT].push(box([0, 0, 0.12 + H + 0.02], ax, [L - 0.08, D - 0.02, 0.03], 0.01)); // its lid
+  for (const sy of [-1, 1]) for (let k = 0; k < 7; k++) parts[S_PAINT].push(box([-L + 0.2 + k * ((2 * L - 0.4) / 6), sy * (D - 0.02), 0.12 + H * 0.45], ax, [0.018, 0.08, H * 0.38], 0.008)); // the fins
+  for (let k = 0; k < 3; k++) { // the bushings: stacked sheds of glazed porcelain
+    const x = -0.24 + k * 0.24, z0 = 0.12 + H + 0.04;
+    parts[S_RUST].push(cone([x, -0.05, z0], [x, -0.05, z0 + 0.26], 0.045, 0.03));
+    for (const dz of [0.06, 0.13, 0.2]) parts[S_RUST].push(cone([x, -0.05, z0 + dz - 0.012], [x, -0.05, z0 + dz + 0.012], 0.07, 0.055));
+    parts[S_STEEL].push(capsule([x, -0.05, z0 + 0.26], [x, -0.05, z0 + 0.3], 0.02));
+  }
+  parts[S_CABLE].push(capsule([-0.24, -0.05, 0.12 + H + 0.34], [-0.5, -0.2, 1.2], 0.016), capsule([-0.5, -0.2, 1.2], [-L - 0.15, -0.15, 0.02], 0.02)); // off toward the mast
+  parts[S_SIGN].push(box([0.15, D - 0.04, 0.12 + H * 0.62], ax, [0.12, 0.03, 0.1], 0.01));
+  return partsModel(parts, [], (best, x, y, z) => {
+    if (best === S_PAINT && (z < 0.17 + 0.06 * hash(Math.floor(x * 20), 3) || hash(Math.floor(x * 40 + z * 7), Math.floor(y * 40 + z * 37)) < 0.03)) return S_RUST; // rusting up from its foot, and in spots
+    if (best === S_SIGN && Math.abs(x - 0.15 - (z - 0.12 - H * 0.62) * 0.6) < 0.018) return S_CABLE; // the bolt on it
+    return best;
+  });
+}
+
+const ANTENNA_W = 100, ANTENNA_H = 140, ANTENNA_ANCHOR = [56, 112];
+const TRANSFORMER_W = 76, TRANSFORMER_H = 72, TRANSFORMER_ANCHOR = [38, 44];
+const STATION_SHADOW_W = 140, STATION_SHADOW_H = 120, STATION_SHADOW_ANCHOR = [70, 60];
+function makeStationPart(name, model, { W, H, anchor, bound, focusZ }) {
+  const img = renderBody(model.sdf, {
+    W, H, anchor, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+    camDist: 12, focusZ, ramps: STATION_RAMPS, material: model.material, outline: [8, 8, 9], bound,
+  });
+  const sh = new Sheet(W, H);
+  sh.blit(img, W, H, 0, 0);
+  save(sh, `${name}.png`);
+  const shadow = renderShadow(model.shape, {
+    W: STATION_SHADOW_W, H: STATION_SHADOW_H, anchor: STATION_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+    camDist: 12, focusZ, light: SHADOW_LIGHT, alpha: 0.55,
+  });
+  const ss = new Sheet(STATION_SHADOW_W, STATION_SHADOW_H);
+  ss.blit(shadow, STATION_SHADOW_W, STATION_SHADOW_H, 0, 0);
+  save(ss, `${name}_shadow.png`);
+  return { image: `${name}.png`, frame: [W, H], anchor, shadow: { image: `${name}_shadow.png`, frame: [STATION_SHADOW_W, STATION_SHADOW_H], anchor: STATION_SHADOW_ANCHOR } };
+}
+const makeAntenna = () => makeStationPart('antenna', antennaModel(), { W: ANTENNA_W, H: ANTENNA_H, anchor: ANTENNA_ANCHOR, bound: [2.9, 3.2], focusZ: 0.9 });
+const makeTransformer = () => makeStationPart('transformer', transformerModel(), { W: TRANSFORMER_W, H: TRANSFORMER_H, anchor: TRANSFORMER_ANCHOR, bound: [0.7, 1.1], focusZ: 0.9 });
+
+// ---------- Cacti: by the research station, a tall one with its arms up and a squat round one; round the wreck, those and more ----------
 
 const CACTUS_RAMPS = [
   ramp('#06110a', '#0b1c10', '#112818', '#183620', '#20452a', '#295535', '#336641', '#3f784e'), // its skin: a dull desert green
@@ -2748,6 +3046,163 @@ function makeVolcano(kind) {
     // color: its reek, its glow (see client.js)
     vent: [0, 0, Hh - 0.24], ventR: C * 0.8, reekColor: ACID[VOLCANO_KINDS[kind].acid][1],
   };
+}
+
+// ---------- A chain-link fence round the safe space: posts, a rail along the top, the mesh between (see FENCE_KINDS) ----------
+
+const FENCE_W = 112, FENCE_H = 112, FENCE_ANCHOR = [56, 64];
+const FENCE_SHADOW_W = 120, FENCE_SHADOW_H = 120, FENCE_SHADOW_ANCHOR = [60, 60];
+const FENCE_RAMPS = [
+  ramp('#16181a', '#232629', '#33373b', '#45494e', '#585d62', '#6c7176', '#81868b', '#989da1'), // galvanized steel, painted grey
+  ramp('#1a0e08', '#2a160b', '#3c200f', '#4f2b14', '#62371a', '#754421', '#875229', '#996133'), // rust
+];
+const MESH_P = 0.3, MESH_Q = 0.6; // meters: a diamond of the mesh, across and up (taller than it is: seen from up here, else squashed flat)
+const FENCE_CAM = 25; // (from farther than the rest: hardly any perspective, its posts upright side by side)
+const FENCE_POST_H = FENCE.h, FENCE_MESH_TOP = FENCE.h - 0.07;
+
+// A panel by its kind, model space (meters: x along it, the left post at -len/2; y across, +y the
+// safe space's side; z up): where each bit of the mesh is, u along it and z up it as hung (null: torn
+// away); and where its posts stand (foot, top) and its rail runs
+function fenceModel(kind) {
+  const L = FENCE.len, half = L / 2, r = rng(kind.length * 389 + kind.charCodeAt(6));
+  const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const t = (u) => (u + half) / L; // (0 at the left post, 1 at the right)
+  let mesh = (u, z) => [u, 0, z], posts = [[[-half, 0, 0], [-half, 0, FENCE_POST_H]], [[half, 0, 0], [half, 0, FENCE_POST_H]]], rail = (u) => [u, 0, FENCE_POST_H - 0.02];
+  // Its mesh, damaged: a hole torn in it, its edges curled out, another dug under it; or torn off the
+  // rail over its right part, hanging down outwards
+  const holes = [[0.25, 0.75, 0.33, 0.36], [-0.5, 0, 0.3, 0.26]];
+  const holed = (u, z) => {
+    let curl = 0;
+    for (const [hu, hz, ru, rz] of holes) {
+      const d = Math.hypot((u - hu) / ru, (z - hz) / rz) + 0.12 * Math.sin(u * 23 + z * 17);
+      if (d < 1) return null;
+      curl = Math.max(curl, 1 - (d - 1) / 0.25);
+    }
+    return [u, -0.08 * curl, z];
+  };
+  const torn = (u, z) => {
+    const k = smooth(0.3, 0.55, t(u)), edge = 0.55 + 0.12 * Math.sin(u * 7 + 1);
+    if (k <= 0 || z <= edge) return [u, 0, z];
+    if (k > 0.4 && z > FENCE_MESH_TOP - 0.25 + 0.15 * Math.sin(u * 19) && t(u) > 0.5) return null; // (its ragged top torn off)
+    const a = 2.5 * k, dz = z - edge;
+    return [u, -dz * Math.sin(a), edge + dz * Math.cos(a) + 0.03];
+  };
+  const damaged = { fence_holed: holed, fence_torn: torn, fence_leaning_holed: holed, fence_leaning_torn: torn }[kind];
+  if (damaged) mesh = damaged;
+  // Pushed over outwards (FENCE_LEANS: how far over, radians, at its left end and its right; how much its
+  // rail sags in the middle, meters): the whole of it turned about its foot, its posts with it
+  const leans = FENCE_LEANS[kind];
+  if (leans) {
+    const { lean: [l0, l1], sag } = leans, flat = mesh;
+    const over = ([u, y, z]) => {
+      const l = l0 + (l1 - l0) * t(u), c = Math.cos(l), s = Math.sin(l);
+      return [u, y * c - z * s, y * s + z * c - sag * Math.sin(Math.PI * t(u)) * (z / FENCE_POST_H)];
+    };
+    mesh = (u, z) => { const p = flat(u, z); return p && over(p); };
+    posts = [[[-half, 0, 0], over([-half, 0, FENCE_POST_H])], [[half, 0, 0], over([half, 0, FENCE_POST_H])]];
+    rail = (u) => over([u, 0, FENCE_POST_H - 0.02]);
+  }
+  const prims = posts.map(([a, b]) => capsule(a, b, 0.035));
+  for (let i = 0; i < 12; i++) prims.push(capsule(rail(-half + (L * i) / 12), rail(-half + (L * (i + 1)) / 12), 0.022));
+  const rusty = kind !== 'fence';
+  const field = bodySdf([{ k: 0.01, prims }], 0.01);
+  return {
+    mesh, shape: field,
+    sdf: (x, y, z) => Math.max(field(x, y, z), -z),
+    material: (x, y, z) => (rusty && hash(Math.floor(x * 30 + 5), Math.floor(z * 30 + y * 20)) < 0.28 ? 1 : 0),
+    rand: r,
+  };
+}
+
+// The camera renderBody draws with (perspective, trueGround), for the mesh's wires: a model point ->
+// the frame's pixel, and how far off it is
+function fenceCamera(yaw, anchor) {
+  const ce = Math.cos(ELEV), se = Math.sin(ELEV), cy = Math.cos(yaw), sy = Math.sin(yaw), camDist = FENCE_CAM, focusZ = 0.9;
+  const C = [0, ce * camDist, focusZ + se * camDist], fwd = [0, -ce, -se], down = [0, se, -ce], focusSy = anchor[1] - focusZ * ce * PX_PER_M;
+  return ([mx, my, mz]) => {
+    const w = [mx * cy - my * sy, (mx * sy + my * cy) / se, mz], d = [w[0] - C[0], w[1] - C[1], w[2] - C[2]];
+    const along = d[0] * fwd[0] + d[1] * fwd[1] + d[2] * fwd[2], s = camDist / along;
+    const q = [C[0] + d[0] * s, C[1] + d[1] * s, C[2] + d[2] * s - focusZ];
+    return [anchor[0] + q[0] * PX_PER_M, focusSy + (q[1] * down[1] + q[2] * down[2]) * PX_PER_M, along];
+  };
+}
+
+// The mesh's wires, each family of diagonals in turn, a point every so often along them: (u, z, which family)
+function* meshWires() {
+  const half = FENCE.len / 2, k = MESH_P / MESH_Q;
+  for (const f of [1, -1])
+    for (let n = -Math.ceil((FENCE.len + MESH_P * 6) / MESH_P); n <= Math.ceil((FENCE.len + MESH_P * 6) / MESH_P); n++)
+      for (let z = 0.06; z <= FENCE_MESH_TOP; z += 0.006) {
+        const u = n * MESH_P + f * z * k;
+        if (u > -half + 0.03 && u < half - 0.03) yield [u, z, f];
+      }
+  for (let u = -half + 0.03; u < half - 0.03; u += 0.006) yield [u, 0.06, 0]; // its bottom wire
+}
+
+// Each way a panel's turned (FENCE_YAWS) its own sprite, kind_frame, with its depth map: the mesh and
+// the posts each in their place among the characters (see render/sprites.js: drawn in bands by it)
+function makeFence(kind) {
+  const model = fenceModel(kind), L = SHADOW_LIGHT, ll = Math.hypot(...L), Ln = L.map((v) => v / ll), out = {};
+  for (let f = 0; f < FENCE_YAWS.length; f++) {
+    const yaw = FENCE_YAWS[f], name = `${kind}_${f}`, cy = Math.cos(yaw), sy = Math.sin(yaw);
+    // The mesh first: each wire a pixel wide, lit by the moon one way, the other darker; the posts over it
+    const img = new Uint8ClampedArray(FENCE_W * FENCE_H * 4), depth = new Float32Array(FENCE_W * FENCE_H).fill(1e9), groundY = new Float32Array(FENCE_W * FENCE_H).fill(-1e9);
+    const project = fenceCamera(yaw, FENCE_ANCHOR), projectShadow = fenceCamera(yaw, FENCE_SHADOW_ANCHOR);
+    const shadow = new Uint8ClampedArray(FENCE_SHADOW_W * FENCE_SHADOW_H * 4);
+    for (const [u, z, fam] of meshWires()) {
+      const p = model.mesh(u, z);
+      if (!p) continue;
+      const [px, py, d] = project(p), ix = Math.floor(px), iy = Math.floor(py);
+      if (ix >= 0 && iy >= 0 && ix < FENCE_W && iy < FENCE_H && d < depth[iy * FENCE_W + ix]) {
+        const i = iy * FENCE_W + ix;
+        depth[i] = d;
+        groundY[i] = p[0] * sy + p[1] * cy; // (how far down the ground it stands, as the game lays it out)
+        // (a knuckle where two wires cross: bright; the wires lit by the moon one way, the other darker)
+        const a = (u - z * MESH_P / MESH_Q) / MESH_P, b = (u + z * MESH_P / MESH_Q) / MESH_P, knot = fam !== 0 && Math.abs(a - Math.round(a)) < 0.07 && Math.abs(b - Math.round(b)) < 0.07;
+        const lit = knot ? 1.45 : fam === 0 ? 0.85 : fam > 0 ? 1.1 : 0.8;
+        img.set([...[128, 134, 140].map((v) => Math.min(255, Math.round(v * lit * (0.85 + 0.15 * (p[2] / FENCE.h))))), 255], i * 4);
+      }
+      const g = [p[0] - Ln[0] * (p[2] / Ln[2]), p[1] - Ln[1] * (p[2] / Ln[2]), 0], [gx, gy] = projectShadow(g), jx = Math.floor(gx), jy = Math.floor(gy);
+      if (jx >= 0 && jy >= 0 && jx < FENCE_SHADOW_W && jy < FENCE_SHADOW_H) shadow.set([0, 0, 0, 70], (jy * FENCE_SHADOW_W + jx) * 4);
+    }
+    // The mesh outlined in black, as everything is: round each wire, where nothing else is
+    const wire = img.slice();
+    for (let y = 0; y < FENCE_H; y++)
+      for (let x = 0; x < FENCE_W; x++) {
+        const i = y * FENCE_W + x;
+        if (wire[i * 4 + 3]) continue;
+        let near = -1;
+        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const X = x + ox, Y = y + oy;
+          if (X >= 0 && Y >= 0 && X < FENCE_W && Y < FENCE_H && wire[(Y * FENCE_W + X) * 4 + 3]) { near = Y * FENCE_W + X; break; }
+        }
+        if (near < 0) continue;
+        img.set([10, 10, 12, 255], i * 4);
+        groundY[i] = groundY[near];
+      }
+    const postY = new Float32Array(FENCE_W * FENCE_H).fill(-1e9);
+    const posts = renderBody(model.sdf, {
+      W: FENCE_W, H: FENCE_H, anchor: FENCE_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw, trueGround: true, groundY: postY,
+      camDist: FENCE_CAM, focusZ: 0.9, ramps: FENCE_RAMPS, material: model.material, outline: [10, 10, 12], bound: [0.8, 1.7],
+    });
+    for (let i = 0; i < FENCE_W * FENCE_H; i++) if (posts[i * 4 + 3]) { img.set(posts.subarray(i * 4, i * 4 + 4), i * 4); groundY[i] = postY[i]; }
+    const sh = new Sheet(FENCE_W, FENCE_H);
+    sh.blit(img, FENCE_W, FENCE_H, 0, 0);
+    save(sh, `${name}.png`);
+    const postShadow = renderShadow(model.shape, {
+      W: FENCE_SHADOW_W, H: FENCE_SHADOW_H, anchor: FENCE_SHADOW_ANCHOR, pxPerM: PX_PER_M, elev: ELEV, yaw, trueGround: true,
+      camDist: FENCE_CAM, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55, reach: 1.8,
+    });
+    for (let i = 0; i < FENCE_SHADOW_W * FENCE_SHADOW_H; i++) if (postShadow[i * 4 + 3] > shadow[i * 4 + 3]) shadow.set(postShadow.subarray(i * 4, i * 4 + 4), i * 4);
+    const ss = new Sheet(FENCE_SHADOW_W, FENCE_SHADOW_H);
+    ss.blit(shadow, FENCE_SHADOW_W, FENCE_SHADOW_H, 0, 0);
+    save(ss, `${name}_shadow.png`);
+    out[name] = {
+      image: `${name}.png`, frame: [FENCE_W, FENCE_H], anchor: FENCE_ANCHOR, depth: saveDepth(groundY, FENCE_W, FENCE_H, name),
+      shadow: { image: `${name}_shadow.png`, frame: [FENCE_SHADOW_W, FENCE_SHADOW_H], anchor: FENCE_SHADOW_ANCHOR },
+    };
+  }
+  return out;
 }
 
 // A big thing's depth map, beside its sprite (see render/sprites.js: drawn in bands by it): for each pixel,
@@ -3156,12 +3611,19 @@ const objects = {
   egg: await part('egg', makeEgg), // the huge thing, near the pole
   egg_pit: await part('egg_pit', makeEggPit), // the pit left of it
   equipment: await part('equipment', makeEquipment), // the fellow's, lost in the West
-  well: await part('well', makeWell), // by it
-  cactus: await part('cactus', () => makeCactus('cactus')), cactus_small: await part('cactus_small', () => makeCactus('cactus_small')), // by the well
+  antenna: await part('antenna', makeAntenna), transformer: await part('transformer', makeTransformer), // the research station, by it
+  barrel: await part('barrel', makeBarrel), // by the garage's front corner
+  garden: await part('garden', makeGarden), // by its right wall
+  loose_earth: await part('loose_earth', () => makeLooseEarth()), // round the huge thing
+  loose_earth_pod: await part('loose_earth_pod', () => makeLooseEarth(POD_SAFE_R, 'loose_earth_pod', 7, [(BACKPACK.x - POD.x) / UNITS_PER_M, (BACKPACK.y - POD.y) / UNITS_PER_M, BACKPACK_SAFE_R])), // round where he came down: the pod and the backpack
+  asphalt_station: await part('asphalt_station', () => makeAsphalt('asphalt_station', STATION_SAFE_R)), // round the research station
+  asphalt: await part('asphalt', makeAsphalt), // inside its fence
+  cactus: await part('cactus', () => makeCactus('cactus')), cactus_small: await part('cactus_small', () => makeCactus('cactus_small')), // by the research station
   cactus_organ: await part('cactus_organ', () => makeCactus('cactus_organ')), cactus_pear: await part('cactus_pear', () => makeCactus('cactus_pear')), cactus_cluster: await part('cactus_cluster', () => makeCactus('cactus_cluster')), // round the wreck too
   ...Object.fromEntries(await Promise.all(Object.keys(ROCKS).map(async (k) => [k, await part(k, () => makeRock(k))]))), // strewn with the cacti
   ...Object.fromEntries(await Promise.all(Object.keys(FISSURE_KINDS).map(async (k) => [k, await part(k, () => makeFissure(k))]))), // strewn with the cacti and rocks
   ...Object.fromEntries(await Promise.all(Object.keys(VOLCANO_KINDS).map(async (k) => [k, await part(k, () => makeVolcano(k))]))), // a few in each sector, with them
+  ...Object.assign({}, ...(await Promise.all(Object.values(FENCE_KINDS).map((k) => part(k, () => makeFence(k))))).filter(Boolean)), // round the safe space (a sprite for each way it's turned)
   ...Object.fromEntries(await Promise.all((WRECK_SHOWN ? Object.keys(CONTAINER_KINDS) : []).map(async (k) => [k, await part(k, () => makeContainer(k))]))), // by the wreck
   ...Object.fromEntries(await Promise.all((WRECK_SHOWN ? WRECK_PIECES : []).map(async (p) => [p.name, await part(p.name, () => makeWreckPiece(p))]))), // the ship's, near the equator, broken in two
   rocket: await part('rocket', makeRocket), crater: await part('crater', makeCrater), crater_small: await part('crater_small', makeSmallCrater),

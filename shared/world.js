@@ -257,15 +257,86 @@ OBJECTS.push({ name: 'garage', x: GARAGE.x, y: GARAGE.y, yaw: GARAGE.yaw, footpr
 const GARAGE_KEEP = 0.15; // meters past its walls (he's wider than his feet: his pack; the art's depth sorts the rest, see client.js)
 OBSTACLES.push(...solidRect({ ...GARAGE, name: 'garage' }, 0, -GARAGE_SIZE[0] - GARAGE_KEEP, GARAGE_SIZE[0] + GARAGE_KEEP, -GARAGE_SIZE[1] - GARAGE_KEEP, GARAGE_SIZE[1] + GARAGE_KEEP)); // (its walls, square to the corners)
 // Its torn-off gate leaf, leant against its side wall by the doorway (its middle, meters, in its model;
-// the art draws it there): it stops the hero, and shots, along a few circles down its foot, and in the
-// gap between it and the wall
+// the art draws it there): it stops the hero, and shots, and the gap between it and the wall
 export const GARAGE_LEAF = [GARAGE_SIZE[0] + 0.62, GARAGE_SIZE[1] - 0.85];
-OBSTACLES.push(...[0.15, -0.3].flatMap((d) => [-0.45, 0, 0.45].map((m) => ({ ...modelToWorld(GARAGE, [GARAGE_LEAF[0] + d, GARAGE_LEAF[1] + m]), r: 0.38 * UNITS_PER_M, cover: true, of: 'garage' })))); // (and the gap under it to the wall: no getting in there)
+// (all of it, from the wall out past its foot on the sand, as the art leans it: a rectangle, the gap under
+// it to the wall in it; past its foot and its edges a little more, so he doesn't seem to stand on it)
+const LEAF_FOOT = GARAGE_LEAF[0] + 1.5 * Math.sin(0.42), LEAF_HALF = 0.64; // meters: how far out its foot is (it leans 0.42 in, 1.5 up to its middle: see tools/make-art.mjs), half its width
+OBSTACLES.push(...solidRect({ ...GARAGE, name: 'garage' }, 0, GARAGE_SIZE[0], LEAF_FOOT + 0.2, GARAGE_LEAF[1] - LEAF_HALF - 0.12, GARAGE_LEAF[1] + LEAF_HALF + 0.12));
+// A little garden bed by its right wall, the fellow's: a frame of planks, dug earth, two rows of
+// something green coming up (meters, in its model: its middle; its half width and length), along the
+// wall; it stops the hero (low: shot over)
+export const GARDEN = { at: [GARAGE_SIZE[0] + 1.15, -1.1], half: [0.5, 1.0] };
+OBJECTS.push({ name: 'garden', ...modelToWorld(GARAGE, GARDEN.at), yaw: GARAGE.yaw, footprint: [...GARDEN.half, 0.4] });
+OBSTACLES.push(...solidRect({ ...GARAGE, name: 'garden', ...modelToWorld(GARAGE, GARDEN.at) }, 0, -GARDEN.half[0] - 0.05, GARDEN.half[0] + 0.05, -GARDEN.half[1] - 0.05, GARDEN.half[1] + 0.05, null, false));
+// A rusty steel drum by its front corner, on the gates' hinge side (meters, in its model): no getting in
+// to the corner there; it stops the hero, and shots
+export const BARREL_R = 0.3; // meters: its radius (the art draws it so)
+const BARREL_SOLID = { ...modelToWorld(GARAGE, [-GARAGE_SIZE[0] - 0.33, GARAGE_SIZE[1] - 0.15]), r: (BARREL_R + 0.06) * UNITS_PER_M, cover: true, of: 'barrel' };
+OBJECTS.push({ name: 'barrel', x: BARREL_SOLID.x, y: BARREL_SOLID.y, solid: BARREL_SOLID });
+OBSTACLES.push(BARREL_SOLID);
 // The fellow: an old scientist, standing out in front of the garage by its open doorway (meters, in its
-// model), facing the camera; he stops the hero (not shots: they'd go into him)
-const FELLOW_SOLID = { ...modelToWorld(GARAGE, [0.55, GARAGE_SIZE[1] + 0.9]), r: 0.3 * UNITS_PER_M, of: 'garage' };
+// model), facing the camera; he stops the hero, and shots (as the turret does: the aim's reach stops at him)
+const FELLOW_SOLID = { ...modelToWorld(GARAGE, [0.55, GARAGE_SIZE[1] + 0.9]), r: 0.3 * UNITS_PER_M, cover: true, of: 'garage' };
 OBJECTS.push({ name: 'fellow', x: FELLOW_SOLID.x, y: FELLOW_SOLID.y, label: 'Fellow', solid: FELLOW_SOLID, say: 'Oh, a visitor! I hate visitors! Haven’t had any in years... Are you going to kill me?', speaks: true, breathes: true }); // (speaks: his line's his own, over his head)
 OBSTACLES.push(FELLOW_SOLID);
+
+// The safe space's safe zone: a rectangle round it, square to the garage (meters in the garage's
+// model: its middle, its half width and half depth), the garage, the fellow, the campfire and the turret
+// all inside; see SAFE_ZONES
+export const SAFE_RECT = { dx: 3, dy: 1.5, w: 7, h: 7 };
+// Inside the fence, all over it, old asphalt drifted over with sand (see tools/make-art.mjs: a decal, under
+// everything else)
+OBJECTS.unshift({ name: 'asphalt', ...modelToWorld(GARAGE, [SAFE_RECT.dx, SAFE_RECT.dy]), flat: true });
+// A chain-link fence round the safe space, along its safe zone's edge, here and there: runs of panels,
+// gaps between (ways in on every side). Galvanized posts, a rail along the top, the mesh between them;
+// some panels holed, some leaning, the mesh torn off the rail and hanging (see tools/make-art.mjs).
+// They stop the hero and the bugs (not shots: through the mesh). FENCE: a panel's length, how high its posts stand (meters);
+// FENCE_YAWS: the ways a panel's turned (its sides', round from the garage's way: square to it), a
+// sprite for each (kind_i)
+export const FENCE = { len: 2, h: 1.55 }, FENCE_YAWS = [0, 1, 2, 3].map((k) => GARAGE.yaw + (k * Math.PI) / 2);
+// How far off its line he's kept (meters, either side, past his own size): as far as it stands high on
+// the screen, so behind it he's clear over it, in front of it clear in front (never seeming to stand in it)
+const FENCE_KEEP = 0.35;
+// A leaning one's outside: out past its top as it hangs over at each end (as far out as its lean takes
+// it, and his pack and shoulder's width more: never under it, never seeming to stand in its mesh)
+const FENCE_LEAN_ROOM = 0.62;
+// The leaning ones (see tools/make-art.mjs): how far over each's pushed, radians, at its left end (-x
+// in its model) and its right; how much its rail sags in the middle, meters
+export const FENCE_LEANS = {
+  fence_leaning: { lean: [0.12, 0.54], sag: 0.16 }, // (the right end most)
+  fence_leaning_back: { lean: [0.5, 0.1], sag: 0.1 }, // (the left end most)
+  fence_leaning_holed: { lean: [0.34, 0.38], sag: 0.24 }, // (all of it, holed too)
+  fence_leaning_torn: { lean: [0.22, 0.46], sag: 0.12 }, // (its mesh torn off the rail too)
+};
+export const FENCE_KINDS = { F: 'fence', H: 'fence_holed', L: 'fence_leaning', K: 'fence_leaning_back', J: 'fence_leaning_holed', Q: 'fence_leaning_torn', T: 'fence_torn' };
+{
+  const { dx, dy, w, h } = SAFE_RECT, x0 = dx - w, x1 = dx + w, y0 = dy - h, y1 = dy + h;
+  // Its sides, round it the way the angles grow (along the top, down the right, back along the bottom,
+  // up the left, as the garage's model has them): where each starts, which way it goes, and a panel a
+  // slot along it, its kind or a gap ('.')
+  const SIDES = [
+    [[x0, y0], [1, 0], 'FHF...F'],
+    [[x1, y0], [0, 1], 'LJ...QK'], // (only leaning ones, pushed over outwards, each its own way)
+    [[x1, y1], [-1, 0], 'FTF...H'],
+    [[x0, y1], [0, -1], 'FL..FHF'],
+  ];
+  SIDES.forEach(([[sx, sy], [ux, uy], slots], frame) => {
+    for (let i = 0; i < slots.length; i++) {
+      const kind = FENCE_KINDS[slots[i]];
+      if (!kind) continue;
+      const along = (i + 0.5) * FENCE.len, name = `fence_${frame}_${i}`;
+      // (its sprite: the kind, turned its side's way; drawn by depth, see client.js; on the sides running
+      // up and down the screen, side, under him whenever he's inside by it)
+      const o = { name, sprite: `${kind}_${frame}`, ...modelToWorld(GARAGE, [sx + ux * along, sy + uy * along]), yaw: FENCE_YAWS[frame], fence: { side: ux === 0, len: FENCE.len } };
+      OBJECTS.push(o);
+      // (outside, a leaning one's top hangs out over him: kept out from under it, as far as it leans at each end)
+      const [outL, outR] = FENCE_LEANS[kind]?.lean.map((l) => Math.max(FENCE_KEEP, FENCE.h * Math.sin(l) + FENCE_LEAN_ROOM)) ?? [FENCE_KEEP, FENCE_KEEP];
+      const a = -FENCE.len / 2 - 0.04, b = FENCE.len / 2 + 0.04;
+      OBSTACLES.push({ poly: [[a, -outL], [b, -outR], [b, FENCE_KEEP], [a, FENCE_KEEP]].map((m) => { const q = modelToWorld(o, m); return [q.x, q.y]; }), cover: false, of: name });
+    }
+  });
+}
 
 // The huge thing the fellow saw near the pole (see quests.js), in the middle of the map's cell C1: an
 // alien bug's egg, near twice as tall as the hero, sunk in a pool of its poison, a couple of big spikes
@@ -390,6 +461,10 @@ CONTAINERS.forEach(([mx, my, kind], i) => {
 if (WRECK_SHOWN) Object.assign(OBJECTS.find((o) => o.name === 'wreck'), { label: WRECK.label, say: 'Nothing but scrap in here...', solids: WRECK_SOLIDS });
 export const EGG_R = 1.15; // meters: how wide it is, round its middle (the art draws it so)
 const EGG_SOLID = { x: HUGE_THING.x, y: HUGE_THING.y, r: (EGG_R + 0.1) * UNITS_PER_M, cover: true, of: 'egg' };
+// Round it, as far as its safe zone goes, loose earth: dug up, churned (by what's in it, what crawls out
+// of it), drifting off into the sand at its edge (see tools/make-art.mjs: a decal, under everything else)
+export const EGG_SAFE_R = 10; // meters
+OBJECTS.unshift({ name: 'loose_earth', x: HUGE_THING.x, y: HUGE_THING.y, flat: true });
 OBJECTS.push({ name: 'egg', x: HUGE_THING.x, y: HUGE_THING.y, label: 'Huge thing', solid: EGG_SOLID, breathes: true, quest: 'hugeThing', say: 'I won’t fight the urge to destroy this abomination!', sayOff: 'Ew, it’s huge... Looks disgusting!' }); // (sayOff: his line while its quest, quest, isn't on; say, on it: it wakes, see client.js)
 OBSTACLES.push(EGG_SOLID);
 // ...and the pit under it, left once it's burst (see client.js): a deep well of its poison; walked round, shot over
@@ -404,18 +479,29 @@ OBJECTS.push({ name: 'egg_pit', x: HUGE_THING.x, y: HUGE_THING.y, flat: true, la
 export const EQUIPMENT = { label: 'Equipment', home: cellPoint('D2') };
 Object.assign(EQUIPMENT, chartPoint(CHART0, EQUIPMENT.home));
 const EQUIPMENT_SOLID = { x: EQUIPMENT.x, y: EQUIPMENT.y, r: 0.58 * UNITS_PER_M, cover: true, of: 'equipment' };
-OBJECTS.push({ name: 'equipment', x: EQUIPMENT.x, y: EQUIPMENT.y, label: EQUIPMENT.label, pickup: true, solid: EQUIPMENT_SOLID, pickupSay: 'Test tubes, flasks... Easy now, not a single one cracked.' });
+OBJECTS.push({ name: 'equipment', x: EQUIPMENT.x, y: EQUIPMENT.y, label: EQUIPMENT.label, pickup: true, solid: EQUIPMENT_SOLID }); // (what he says picking it up: the map's cue, see client.js)
 OBSTACLES.push(EQUIPMENT_SOLID);
-// By it, a desert well: a ring of rough stones round a dark hole (see tools/make-art.mjs), behind it
-// and a little to its left; it stops the hero, and shots (waist-high stone). It goes on the map once
-// he's come up to it (see client.js)
-const WELL_SOLID = { x: EQUIPMENT.x - 1.05 * UNITS_PER_M, y: EQUIPMENT.y - 2.6 * UNITS_PER_M, r: 0.78 * UNITS_PER_M, cover: true, of: 'well' };
-OBJECTS.push({ name: 'well', x: WELL_SOLID.x, y: WELL_SOLID.y, label: 'Well', solid: WELL_SOLID, say: 'Almost empty... Useless...' });
-OBSTACLES.push(WELL_SOLID);
-// And by the well, a couple of cacti: a tall one with its arms up behind it on the left, a squat round
-// one off to its right, over the crate's right corner; they stop the hero (the tall one shots too)
-const CACTUS_SOLID = { x: WELL_SOLID.x - 1.45 * UNITS_PER_M, y: WELL_SOLID.y - 0.5 * UNITS_PER_M, r: 0.22 * UNITS_PER_M, cover: true, of: 'cactus' };
-const CACTUS_SMALL_SOLID = { x: WELL_SOLID.x + 3.1 * UNITS_PER_M, y: WELL_SOLID.y + 1.0 * UNITS_PER_M, r: 0.28 * UNITS_PER_M, of: 'cactus_small' };
+// By it, the research station: a lattice mast, a satellite dish on its side, a lamp on its top, and a
+// transformer by its foot, cabled to it (see tools/make-art.mjs); the mast behind the crate and a
+// little to its left, the transformer to the mast's right. They stop the hero, and shots. The mast
+// carries the station's name (it goes on the map once he's come up to it: see client.js)
+export const STATION = { label: 'Research station' };
+const ANTENNA_SOLID = { x: EQUIPMENT.x - 1.05 * UNITS_PER_M, y: EQUIPMENT.y - 2.6 * UNITS_PER_M, r: 0.42 * UNITS_PER_M, cover: true, of: 'antenna' };
+OBJECTS.push({ name: 'antenna', x: ANTENNA_SOLID.x, y: ANTENNA_SOLID.y, label: STATION.label, solid: ANTENNA_SOLID, say: 'A strange place for research...' });
+OBSTACLES.push(ANTENNA_SOLID);
+export const TRANSFORMER_SIZE = [0.55, 0.4]; // meters: its cabinet's half width (x), half depth (y)
+const TRANSFORMER = { x: ANTENNA_SOLID.x + 1.75 * UNITS_PER_M, y: ANTENNA_SOLID.y + 0.25 * UNITS_PER_M, yaw: 0 };
+OBJECTS.push({ name: 'transformer', ...TRANSFORMER });
+OBSTACLES.push(...solidRect({ ...TRANSFORMER, name: 'transformer' }, 0, -TRANSFORMER_SIZE[0] - 0.12, TRANSFORMER_SIZE[0] + 0.12, -TRANSFORMER_SIZE[1] - 0.1, TRANSFORMER_SIZE[1] + 0.15));
+// Round it, as far as its safe zone goes (see SAFE_ZONES), old asphalt drifted over with sand, as the
+// safe space's (a decal, under everything else: see tools/make-art.mjs)
+export const STATION_SAFE_R = 8; // meters, round the crate
+OBJECTS.unshift({ name: 'asphalt_station', x: EQUIPMENT.x, y: EQUIPMENT.y, flat: true });
+// And just past its asphalt, a couple of cacti: a tall one with its arms up, behind the station on the
+// left, a squat round one off to the right (meters off the crate, out past the asphalt's ragged rim);
+// they stop the hero (the tall one shots too)
+const CACTUS_SOLID = { x: EQUIPMENT.x - 6.5 * UNITS_PER_M, y: EQUIPMENT.y - 6.6 * UNITS_PER_M, r: 0.22 * UNITS_PER_M, cover: true, of: 'cactus' };
+const CACTUS_SMALL_SOLID = { x: EQUIPMENT.x + 8.6 * UNITS_PER_M, y: EQUIPMENT.y - 3.2 * UNITS_PER_M, r: 0.28 * UNITS_PER_M, of: 'cactus_small' };
 OBJECTS.push({ name: 'cactus', x: CACTUS_SOLID.x, y: CACTUS_SOLID.y, solid: CACTUS_SOLID }, { name: 'cactus_small', x: CACTUS_SMALL_SOLID.x, y: CACTUS_SMALL_SOLID.y, solid: CACTUS_SMALL_SOLID });
 OBSTACLES.push(CACTUS_SOLID, CACTUS_SMALL_SOLID);
 
@@ -543,16 +629,23 @@ const STREWN_AWAY = [[STRUCTURES, 22], [WRECK, 30], [HUGE_THING, 12], [EQUIPMENT
     }
 }
 
+// Round the escape pod and the backpack, as far as their safe zones go (see SAFE_ZONES), loose earth, as
+// round the huge thing: dug up where the pod came down (one decal round them both, out from the pod, under
+// everything else: see tools/make-art.mjs)
+OBJECTS.unshift({ name: 'loose_earth_pod', x: POD.x, y: POD.y, flat: true });
+
 // Safe zones round the escape pod and the backpack (overlapping: the way between them is safe too),
 // and round the structures, the egg and the equipment: bugs only come for the hero when he's out of them
-// all; they don't turn up in them (see client.js). { at (what it's round: anything kept on the chart with an x, y), r (world units),
-// until (what ends it, if anything does: 'map', the map opened at its cue; 'egg', the egg burst; 'equipment', the fellow's crate picked up) }
+// all; they don't turn up in them (see client.js). { at (what it's round: anything kept on the chart with an x, y), r (world units)
+// or rect (a rectangle instead: { dx, dy, w, h }, meters in at's model (turned as it is, yaw): its middle, its half width and depth),
+// until (what ends it, if anything does: 'left', he's stepped out of them on the way to the safe space; 'egg', the egg burst; 'equipment', the fellow's crate picked up) }
+export const POD_SAFE_R = 12, BACKPACK_SAFE_R = 11; // meters
 export const SAFE_ZONES = [
-  { at: OBJECTS.find((o) => o.name === 'pod'), r: 12 * UNITS_PER_M, until: 'map' },
-  { at: OBJECTS.find((o) => o.name === 'backpack'), r: 11 * UNITS_PER_M, until: 'map' },
-  { at: STRUCTURES, r: 10 * UNITS_PER_M },
-  { at: OBJECTS.find((o) => o.name === 'egg'), r: 10 * UNITS_PER_M, until: 'egg' },
-  { at: EQUIPMENT, r: 8 * UNITS_PER_M, until: 'equipment' },
+  { at: OBJECTS.find((o) => o.name === 'pod'), r: POD_SAFE_R * UNITS_PER_M, until: 'left' },
+  { at: OBJECTS.find((o) => o.name === 'backpack'), r: BACKPACK_SAFE_R * UNITS_PER_M, until: 'left' },
+  { at: OBJECTS.find((o) => o.name === 'garage'), rect: SAFE_RECT }, // (the safe space's: a rectangle square to its garage, its fence along its edge)
+  { at: OBJECTS.find((o) => o.name === 'egg'), r: EGG_SAFE_R * UNITS_PER_M, until: 'egg' },
+  { at: EQUIPMENT, r: STATION_SAFE_R * UNITS_PER_M, until: 'equipment' }, // (the research station's, its asphalt as far)
   { at: WRECK, r: 26 * UNITS_PER_M }, // (big: the whole wreck and well round it)
 ];
 
@@ -643,6 +736,12 @@ export function move(p, dx, dy, dt, speed = SPEED, r = PLAYER_SIZE / 2) { // (r:
   const len = Math.hypot(dx, dy);
   if (len === 0) return;
   if (len > 1) { dx /= len; dy /= len; }
+  // In steps no longer than most of r: one long step (a slow frame, a roll) would land well inside a thin
+  // thing (a fence panel) and be pushed out of it on its far side, through it
+  const steps = Math.max(1, Math.ceil((Math.hypot(dx, dy) * speed * dt) / (0.8 * r)));
+  for (let i = 0; i < steps; i++) step(p, dx, dy, dt / steps, speed, r);
+}
+function step(p, dx, dy, dt, speed, r) {
   let nx = p.x + dx * speed * dt, ny = p.y + dy * speed * dt;
   for (let pass = 0; pass < 3; pass++) // (again: pushed out of one into the next, the bed's row, a corner between two)
     for (const o of OBSTACLES) {

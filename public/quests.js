@@ -65,7 +65,6 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
       title: 'Safe space',
       main: true,
       about: 'I need to <span class="goal">find a place</span> where I can catch my breath.',
-      cue: 'map', // (while it's on, the game cues the map once, as he steps out of the safe zones: see client.js)
       target: 'campfire', // (the way there shown from the start: its campfire, named for it, gold over it till it's done)
       steps: [{ text: 'Get to the safe space', update: ({ firesideUsed }) => firesideUsed }], // (on till he's used its campfire: E)
     },
@@ -86,7 +85,7 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
     {
       title: 'Bring the equipment to the fellow',
       main: true,
-      about: 'The fellow lost his <span class="goal">equipment</span>. He’s useless without it. Bring it back.',
+      about: 'The fellow’s <span class="goal">equipment</span> was stolen. I should probably help him. Clearly he’s not having an easy time out here...',
       steps: [
         { text: 'Find the <span class="goal">equipment</span> (hold E to pick it up)', target: 'equipment', update: ({ hasEquipment }) => hasEquipment }, // (its case in sector D2, see shared/world.js)
         { text: 'Bring the equipment to the <span class="goal">fellow</span>', target: 'fellow', update: ({ equipmentReturned }) => equipmentReturned }, // (E by him with it)
@@ -135,7 +134,7 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
   }
   // slide: a side quest just started, the panel slides in from the right as the main one's does (if it wasn't up)
   function renderSides(slide = false) {
-    const next = sidesOn().map((q) => `<div class="title">${q.title}</div>` + (q.about ? `<div class="about">${q.about}</div>` : '')).join('<div class="split"></div>');
+    const next = sidesOn().map((q) => `<div class="sq" data-id="${q.id}"><div class="title">${q.title}</div>` + (q.about ? `<div class="about">${q.about}</div>` : '') + '</div>').join('<div class="split"></div>');
     if (next === sideHtml) return;
     const appears = slide && !sideHtml && !!next;
     sideHtml = next;
@@ -148,8 +147,26 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
       side.classList.remove('coming'); // (...then in)
     }
   }
+  for (const [id, q] of Object.entries(sides)) q.id = id;
   render();
   renderSides();
+
+  // Side quests just done go off the panel: a copy of it as it was (the ones still on hidden in it, so
+  // the done ones stay where they were) slides off to the right past the screen's edge, the way they
+  // came in; the panel, without them, stays
+  function sendOff(ids) {
+    if (!ids.length) return;
+    const gone = side.cloneNode(true);
+    gone.removeAttribute('id');
+    for (const el of gone.children) {
+      const keep = el.classList.contains('sq') && ids.includes(el.dataset.id);
+      if (!keep) el.style.visibility = 'hidden';
+    }
+    side.after(gone);
+    gone.getBoundingClientRect(); // (laid out where it was first, so it slides from there)
+    gone.classList.add('leaving');
+    setTimeout(() => gone.remove(), SLIDE_TIME);
+  }
 
   // The panel as it is goes: a copy of it fades, then slides up off the screen; once it's gone the
   // panel, the next quest in it now, slides in from the right past the screen's edge (never both at once)
@@ -242,10 +259,16 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
     // hasBackpack, bottlesBroken (bottles shot off the crate), bagHits (knife cuts in the punching bag), talentsTaken (how many he has), firesideUsed (he's used the safe space's campfire: E), fellowTalked (he's spoken to the fellow: E), fellowAsked (he's asked him the way off: 1, and had his answer), hasEquipment (he's picked up the fellow's crate), equipmentReturned (and handed it back to him: E by him), fellowThreatened (told him he's going to die: the evacuation plan's answer) }
     update(input) {
       last = input;
+      const finished = [];
       for (const q of sidesOn()) {
         for (const s of q.steps) if (!s.done && s.update(input)) s.done = true;
-        if (q.steps.every((s) => s.done)) q.doneAt = current; // (where it goes among the done ones in the journal)
+        if (q.steps.every((s) => s.done)) {
+          q.doneAt = current; // (where it goes among the done ones in the journal)
+          finished.push(q.id);
+          done(q); // (its chord, as the story's)
+        }
       }
+      sendOff(finished); // (off to the right, as it was)
       renderSides();
       const q = quests[current];
       if (!q.steps.every((s) => s.done)) {

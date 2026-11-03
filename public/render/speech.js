@@ -8,6 +8,7 @@ export const TYPE_RATE = 40; // letters per second
 const MAX_W = 230; // px, the text wraps to this
 const LINE_H = 16;
 const PAD = 3; // px over the first row and under the last
+const PAD_MORE = 2; // px more of it with more than one row (their ascenders and descenders crowd its edges: it looks as roomy as one row's)
 
 // ctx: the canvas to draw on; voices: a list shared by everyone who speaks (the hero, the fellow):
 // one at a time, a line started cuts off whoever else was saying one
@@ -66,7 +67,7 @@ export function createSpeech(ctx, voices = []) {
       // (sized as a label card's, labels.js: one row is the same 22 px high, the text 20 px wider, so a
       // choice's card and the line it's said as match)
       const w = Math.round(Math.max(...line.rows.map((r) => ctx.measureText(r).width)) + 20);
-      const h = line.rows.length * LINE_H + PAD * 2;
+      const pad = PAD + (line.rows.length > 1 ? PAD_MORE : 0), h = line.rows.length * LINE_H + pad * 2;
       const left = Math.round(edge ?? x - w / 2) + 0.5, top = Math.round(y - 6 - h) + 0.5;
       ctx.globalAlpha = fade;
       // The plate, square on the left with a thick white edge, rounded on the right
@@ -86,7 +87,7 @@ export function createSpeech(ctx, voices = []) {
       line.rows.forEach((row, i) => {
         const shown = row.slice(0, Math.max(0, budget));
         budget -= row.length + 1;
-        if (shown) ctx.fillText(shown, Math.round(left + 11),Math.round(top + PAD + LINE_H * (i + 0.5) + cap / 2));
+        if (shown) ctx.fillText(shown, Math.round(left + 11),Math.round(top + pad + LINE_H * (i + 0.5) + cap / 2));
       });
       ctx.globalAlpha = 1;
       return { top, edge: left };

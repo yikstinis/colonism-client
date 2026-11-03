@@ -46,6 +46,8 @@
     .quest.faded { opacity: 0.4; }
     .quest.gone { opacity: 0; transition: transform 0.5s ease-in, opacity 0.5s ease-in; }
     .quest.coming { transform: translateX(calc(100% + 40px)); transition: none; }
+    /* A side quest done goes the way it came: off to the right (see quests.js) */
+    .quest.leaving { transform: translateX(calc(100% + 40px)); transition: transform 0.5s ease-in; }
     /* The side quests', under it (its top set in client.js), white; none on: not there */
     .quest.none { display: none; }
     .quest .split { margin: 5px 0; border-top: 1px solid rgba(255, 255, 255, 0.15); }

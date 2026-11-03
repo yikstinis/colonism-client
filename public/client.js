@@ -20,8 +20,6 @@ import { add, cross, dot, moveChart, norm, scale, toChart } from '/shared/sphere
 import { createShots } from '/render/shots.js';
 import { createStrike } from '/render/strike.js';
 import { createLevelUp } from '/render/levelup.js';
-import { BUFFS, createBuffs } from '/render/buffs.js';
-import { createCharacter } from '/render/character.js';
 import { createBackpack } from '/render/backpack.js';
 
 const canvas = document.getElementById('game');
@@ -63,7 +61,7 @@ const RECENTER = 10 * UNITS_PER_M; // this far from the chart's origin, the char
 // sprite: character sheet in sprites.json (the hero changes into 'hero_pack' with the backpack on)
 const HP = 10; // the hero's health, full, to begin with
 const LOW_HP = 0.25; // his health this low (a part of all of it): his heart heard pounding (see sounds.pulse)
-let maxHp = HP; // (more as he goes: strength, +1)
+let maxHp = HP;
 const HEALTH_R = 0.49 * UNITS_PER_M; // its ring's radius round him
 const HERO_EDGE = 30; // px left of him: the white edge what's over him starts at (by his left shoulder)
 const MEDKITS = 3, MEDKIT_HEAL = 5; // medkits in the backpack (once he has it: X uses one), and how much health each gives back
@@ -89,15 +87,8 @@ sounds.wake(); // (tried at once: where the browser lets a page play sound befor
 const reach = createReach(ctx); // the knife's reach on the ground
 const hotbar = createHotbar(ctx); // the things he can use, at the bottom (1, 2, the mouse's buttons)
 const talents = createTalents(ctx); // what his levels buy (T)
-const buffs = createBuffs(ctx); // what killing the huge thing gives him, to choose (its window)
-let buffOpen = false; // (its window up: the game holds till he's chosen)
-const character = createCharacter(ctx); // his stats, the buffs raise them (C: their window)
-let characterOpen = false; // (its window up; C, once he's chosen a buff)
-const characterKnown = () => buffOpen || character.any(); // (a buff to choose, or one chosen: C opens it)
 const backpack = createBackpack(ctx); // what he carries (B: its window; its medicine slot: the medkits)
 let backpackOpen = false; // (its window up; B, once its cue's held him)
-const speedBuff = () => character.stats.agility * 0.01; // how much faster he moves, a part of his speed (1% a point)
-const harm = (n) => (Math.random() < character.stats.intelligence * 0.01 ? n * 2 : n); // his round or cut: twice the harm, by chance (1% a point; his own: not the turret's)
 const shots = createShots(ctx); // muzzle flashes and tracers
 const globe = createGlobe(ctx); // the minimap
 const leveled = createLevelUp(ctx); // a new level's spotlight
@@ -195,10 +186,10 @@ function fireRound() {
   }
   // Bugs: every one in the aim's cone (the arc it sways across, out to its range) is hit, all the way
   // through, unless something solid's in the way to it
-  for (const b of bugsInCone()) hurtBug(b, harm(BUG_SHOT), Math.atan2(b.y - me.y, b.x - me.x), true);
+  for (const b of bugsInCone()) hurtBug(b, BUG_SHOT, Math.atan2(b.y - me.y, b.x - me.x), true);
   const tx = me.x + Math.cos(a) * hit, ty = me.y + Math.sin(a) * hit;
   if (!bottle && objects.includes(bag) && Math.hypot(tx - bag.x, ty - bag.y) <= bagStand.solid.r + 1) shootBag(a, tx, ty); // stopped in the bag
-  if (!bottle && eggLife && Math.hypot(tx - egg.x, ty - egg.y) <= egg.solid.r + 1) hurtEgg(harm(BUG_SHOT), a, tx, ty); // in the egg, woken
+  if (!bottle && eggLife && Math.hypot(tx - egg.x, ty - egg.y) <= egg.solid.r + 1) hurtEgg(BUG_SHOT, a, tx, ty); // in the egg, woken
   // The muzzle: the model's (+x the figure's left, +y forward, z up; meters) turned to the facing
   const f = dirVector(me.dir), left = { dx: f.dy, dy: -f.dx };
   const [mx0, my0, mz] = sprites.animation(me.sprite, fireAnim())?.muzzle ?? [-0.2, 0.75, 1.35];
@@ -243,11 +234,6 @@ let spaceHit = false; // Space was pressed since the last frame (the strike wait
 window.addEventListener('keydown', (e) => {
   sounds.wake();
   keys.add(e.code);
-  if (buffOpen) { // the buff's window: nothing but its numbers till he's chosen
-    const b = e.code.startsWith('Digit') && !e.repeat && BUFFS[Number(e.code.slice(5)) - 1];
-    if (b) chooseBuff(b);
-    return;
-  }
   if (e.code === 'Space') {
     e.preventDefault();
     if (!e.repeat) {
@@ -257,7 +243,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyT' && !e.repeat && level > 1 && me.hp > 0) {
     talentsOpen = !talentsOpen;
-    if (talentsOpen) characterOpen = backpackOpen = false;
+    if (talentsOpen) backpackOpen = false;
     if (talentsOpen) sounds.press(); // (the key's click: in, and out the other way round)
     else sounds.done();
   }
@@ -284,28 +270,22 @@ window.addEventListener('keydown', (e) => {
     usePressed = true;
     if (!gameHeld() && !me.pick && reachable()) sounds.press(); // (its click: only with something in reach to use, and the game going)
   }
-  if (e.code === 'KeyC' && !e.repeat && characterKnown() && me.hp > 0) { // the character's window, as the talents'
-    characterOpen = !characterOpen;
-    if (characterOpen) talentsOpen = mapOpen = journalOpen = backpackOpen = false;
-    if (characterOpen) sounds.press(); // (the key's click: in, and out the other way round)
-    else sounds.done();
-  }
-  if (e.code === 'KeyB' && !e.repeat && (backpackKnown() || backpackCue.phase === 'frozen') && me.hp > 0) { // the backpack's window, as the character's (and at its cue)
+  if (e.code === 'KeyB' && !e.repeat && (backpackKnown() || backpackCue.phase === 'frozen') && me.hp > 0) { // the backpack's window, as the talents' (and at its cue)
     backpackOpen = !backpackOpen;
-    if (backpackOpen) talentsOpen = mapOpen = journalOpen = characterOpen = false;
+    if (backpackOpen) talentsOpen = mapOpen = journalOpen = false;
     if (backpackOpen) sounds.press(); // (the key's click: in, and out the other way round)
     else sounds.done();
   }
-  if (e.code === 'Escape' && !e.repeat && (talentsOpen || mapOpen || journalOpen || characterOpen || backpackOpen)) sounds.press(); // (its click in; out the other way round as it's let go, and the window shuts)
+  if (e.code === 'Escape' && !e.repeat && (talentsOpen || mapOpen || journalOpen || backpackOpen)) sounds.press(); // (its click in; out the other way round as it's let go, and the window shuts)
   if (e.code === 'KeyJ' && !e.repeat && me.hp > 0) { // the journal, big in the middle as the map (one or the other)
     journalOpen = !journalOpen;
-    if (journalOpen) mapOpen = talentsOpen = characterOpen = backpackOpen = false;
+    if (journalOpen) mapOpen = talentsOpen = backpackOpen = false;
     if (journalOpen) sounds.press(); // (the key's click: in, and out the other way round)
     else sounds.done();
   }
   if (e.code === 'KeyM' && !e.repeat && mapKnown) {
     mapOpen = !mapOpen;
-    if (mapOpen) journalOpen = characterOpen = backpackOpen = false;
+    if (mapOpen) journalOpen = backpackOpen = false;
     if (mapOpen) sounds.press(); // (the key's click: in, and out the other way round, as the talents')
     else sounds.done();
   }
@@ -313,8 +293,8 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   keys.delete(e.code);
   if (e.code === 'Escape') { // (shut as it's let go: held, its key shows it on the window's card)
-    if (talentsOpen || mapOpen || journalOpen || characterOpen || backpackOpen) sounds.done(); // (out, as T, M, J, C or B does it)
-    mapOpen = talentsOpen = journalOpen = characterOpen = backpackOpen = false;
+    if (talentsOpen || mapOpen || journalOpen || backpackOpen) sounds.done(); // (out, as T, M, J or B does it)
+    mapOpen = talentsOpen = journalOpen = backpackOpen = false;
   }
   if (e.code === 'KeyE') waitRelease = false;
 });
@@ -336,11 +316,6 @@ window.addEventListener('mousemove', (e) => {
 document.addEventListener('mouseleave', () => { mouse = mapDrag = null; });
 window.addEventListener('mousedown', (e) => {
   sounds.wake(); // (the sound can start only once he's done something)
-  if (buffOpen) { // the buff's window: a click on one chooses it
-    const b = e.button === 0 && buffs.at(e.clientX, e.clientY);
-    if (b) chooseBuff(b);
-    return;
-  }
   if (talentsOpen) { // the talents' window: a click takes one
     const t = e.button === 0 && talents.takeAt(e.clientX, e.clientY, points);
     if (t) {
@@ -353,7 +328,6 @@ window.addEventListener('mousedown', (e) => {
     }
     return;
   }
-  if (characterOpen) return; // (nothing to click on in it)
   if (mapOpen) { // the map: the globe taken hold of, to turn it (no slash)
     if (e.button === 0 && mapPlace && Math.hypot(e.clientX - mapPlace.x, e.clientY - mapPlace.y) < mapPlace.r) mapDrag = { x: e.clientX, y: e.clientY };
     return;
@@ -395,7 +369,7 @@ function aimAngle() {
 let swayClock = 0; // the gun's aim's sway runs on this (see shotSway)
 
 // The game holding still: a cue waiting for its key, a window open over it, or him dead
-const gameHeld = () => me.hp <= 0 || buffOpen || journalCue.phase === 'frozen' || backpackCue.phase === 'frozen' || strike.phase === 'frozen' || talentCue === 'frozen' || talentsOpen || characterOpen || backpackOpen
+const gameHeld = () => me.hp <= 0 || journalCue.phase === 'frozen' || backpackCue.phase === 'frozen' || strike.phase === 'frozen' || talentCue === 'frozen' || talentsOpen || backpackOpen
   || mapCue.phase === 'frozen' || mapOpen || journalOpen;
 let heldAim = null; // the cursor as it was when the game last held still (the aim stays put through it), or null: it's going
 function aimDirection() {
@@ -799,16 +773,7 @@ function hitBag() {
 const egg = OBJECTS.find((o) => o.name === 'egg'), eggPit = OBJECTS.find((o) => o.name === 'egg_pit');
 let eggKilled = false; // (its quest done with it)
 const EGG_LEVEL = 3; // (killed, he's up to this level, if he's not yet)
-// The buff he's chosen (BUFFS, render/buffs.js): a point more of its stat (render/character.js), his for good; its window shut
-function chooseBuff(b) {
-  if (!character.raise(b.id)) return; // (at its most: not to be chosen)
-  if (b.id === 'strength') {
-    maxHp++;
-    me.hp++;
-  }
-  buffOpen = false;
-  sounds.done();
-}
+const EGG_POINTS = 1; // (and these talent points more, for it)
 const EGG_LIFE = 13, EGG_HATCH = [1, 5]; // (how many crawl out of it at a hit: from, to)
 let eggLife = null; // what's left of it, from when it's woken (null: not yet)
 const EGG_BITS = ['#efdc4c', '#c6b025', '#9a8514', '#5f3d23', '#332012']; // its poison, its shell
@@ -842,14 +807,15 @@ function hurtEgg(n, a, x, y) {
 // The egg bursts (the last hit from angle a): gone, the pit it stood over (a well of its poison, hidden
 // under it till now) left where it was, reeking on and on; out of where it was, in EGG_BURSTS waves one after
 // another, chunks of it flung high and wide (the hit's way most, lying round a while), a cloud of its
-// reek. Its quest done with it: up to EGG_LEVEL, and a buff for him to choose (its window up)
+// reek. Its quest done with it: up to EGG_LEVEL, and a talent point more for it (EGG_POINTS)
 function burstEgg(a) {
   eggGone();
   EGG_BURSTS.forEach((n, k) => setTimeout(() => eggWave(a, n), k * EGG_BURST_GAP));
   eggKilled = true;
   quests.note('Nasty thing...', 'hugeThing'); // (in the journal, under its quest)
   while (level < EGG_LEVEL) levelUp();
-  buffOpen = true;
+  points += EGG_POINTS;
+  if (talentCue === 'done') talentAsk = true; // (what to press, over him, till it's spent)
 }
 // The egg off the world, its pit there in its place (burst; or so already, kept at the checkpoint)
 function eggGone() {
@@ -933,7 +899,7 @@ const BUG_SPEED = GAIT_SPEED.left, BUG_STRIDE = GAIT_SPEED.left / GAIT_SPEED.run
 // The longer one's alive (coming for him: a guard not till it's woken), the faster: BUG_HASTE of its speed
 // more each second, up to BUG_TOP times his run (agility's on it too): no just running off from them
 const BUG_HASTE = 0.05, BUG_TOP = 1.15;
-const bugSpeed = (b) => Math.min(BUG_SPEED * (1 + BUG_HASTE * b.age), GAIT_SPEED.run * (1 + speedBuff()) * BUG_TOP);
+const bugSpeed = (b) => Math.min(BUG_SPEED * (1 + BUG_HASTE * b.age), GAIT_SPEED.run * BUG_TOP);
 const BUG_R = 0.3 * UNITS_PER_M; // its body's circle (hit by rounds and the knife)
 const BUG_WEAVE = 0.7; // radians it swings off its way to him either side, weaving
 const BUG_LUNGE = 2.5 * UNITS_PER_M, BUG_DASH = { time: 0.25, speed: 1.8, every: 1.2 }; // seconds, times its speed, seconds between
@@ -947,12 +913,18 @@ const MEAT = ['#5a0d0d', '#7a1818', '#3a0808', '#412917', '#26180d']; // its fle
 const bugs = []; // the live ones: { x, y, dir, life, moving, animOffset (ms), weave (its weaving's phase), dash (seconds left of one, or till the next can come: < 0), bite (seconds till its next, at him), attack (seconds into its bite's animation, or undefined) }
 let bugTimer = rand(...BUG_EVERY);
 // The safe zones where they are on the chart now: their centers' places (kept on it, picked up or not);
-// the pod's and the backpack's gone once the map's been opened at its cue, the egg's once it's burst, the
-// crate's (the well in it too) once it's picked up
-const SAFE_ENDS = { map: () => mapCue.phase === 'pressed' || mapCue.phase === 'done', egg: () => eggKilled, equipment: () => hasEquipment };
-const safeZones = SAFE_ZONES.map((z) => ({ o: z.at, r: z.r, gone: SAFE_ENDS[z.until] ?? (() => false) }));
-const SHOW_SAFE = true; // (for now: the safe zones drawn on the sand, to see where they are)
-const inSafe = (x, y, pad = 0) => safeZones.some((z) => !z.gone() && Math.hypot(x - z.o.x, y - z.o.y) < z.r + pad);
+// the pod's and the backpack's gone once he's stepped out of them on the way to the safe space (podLeft),
+// the egg's once it's burst, the crate's (the research station's) once it's picked up
+const SAFE_ENDS = { left: () => podLeft, egg: () => eggKilled, equipment: () => hasEquipment };
+const safeZones = SAFE_ZONES.map((z) => ({ o: z.at, r: z.r, rect: z.rect, gone: SAFE_ENDS[z.until] ?? (() => false) }));
+// (x, y) in zone z, pad world units more round it: a circle, or a rectangle turned as what it's round (the safe space's)
+function inZone(z, x, y, pad) {
+  if (!z.rect) return Math.hypot(x - z.o.x, y - z.o.y) < z.r + pad;
+  const c = modelToWorld(z.o, [z.rect.dx, z.rect.dy]), a = z.o.yaw ?? 0, ox = x - c.x, oy = y - c.y; // (into its model: turned as it is)
+  return Math.abs(ox * Math.cos(a) + oy * Math.sin(a)) < z.rect.w * UNITS_PER_M + pad && Math.abs(-ox * Math.sin(a) + oy * Math.cos(a)) < z.rect.h * UNITS_PER_M + pad;
+}
+const SHOW_SAFE = false; // (true: the safe zones drawn on the sand, to see where they are)
+const inSafe = (x, y, pad = 0) => safeZones.some((z) => !z.gone() && inZone(z, x, y, pad));
 
 // A pack of n, out of sight round him on one side, each clear of solid things and the safe zones
 function spawnPack(n) {
@@ -970,15 +942,15 @@ const addBug = (x, y) => bugs.push({ x, y, dir: dirFromVector(me.x - x, me.y - y
 const inSolid = (x, y) => solidAt(x, y, BUG_R);
 
 // Guards: on the way for the fellow's crate (asked, not picked up yet), GUARDS of them wait round it and the
-// well by it, apart from the packs (not counted in BUG_MAX); put there once he's within GUARD_PUT of the
+// research station's mast by it, apart from the packs (not counted in BUG_MAX); put there once he's within GUARD_PUT of the
 // crate (out of sight). Still and turned every which way till he comes within GUARD_WAKE of one, or one's
 // hit: then all of them come for him, as any other
 const GUARDS = 10, GUARD_PUT = 2 * VISION, GUARD_WAKE = 6 * UNITS_PER_M;
-const GUARD_RING = [1.6 * UNITS_PER_M, 4.5 * UNITS_PER_M]; // how far from the crate or the well, each
+const GUARD_RING = [1.6 * UNITS_PER_M, 4.5 * UNITS_PER_M]; // how far from the crate or the mast, each
 let guardsPut = false, guardsSeen = false; // (seen: his line said, once)
 const GUARDS_LINE = 'Looks a lot like they were waiting for me here! I don’t think that’s possible...';
 function putGuards() {
-  const posts = ['equipment', 'well'].map((name) => objects.find((o) => o.name === name)).filter(Boolean);
+  const posts = ['equipment', 'antenna'].map((name) => objects.find((o) => o.name === name)).filter(Boolean);
   for (let k = 0, tries = 0; k < GUARDS && tries < 200; tries++) {
     const at = posts[k % posts.length], a = rand(0, Math.PI * 2), d = rand(...GUARD_RING), x = at.x + Math.cos(a) * d, y = at.y + Math.sin(a) * d;
     if (inSolid(x, y) || bugs.some((b) => Math.hypot(b.x - x, b.y - y) < BUG_R * 3)) continue;
@@ -992,7 +964,7 @@ const wakeGuards = () => bugs.forEach((b) => { b.waiting = false; });
 let bugMet = false; // the first one seen yet (noted in the journal)
 function updateBugs(dt) {
   // The first one to come into sight on the way to the safe space: noted down
-  if (!bugMet && quests.cue() === 'map' && bugs.some((b) => Math.hypot(b.x - me.x, b.y - me.y) < VISION)) {
+  if (!bugMet && quests.target() === 'campfire' && bugs.some((b) => Math.hypot(b.x - me.x, b.y - me.y) < VISION)) {
     bugMet = true;
     quests.note('This place could be dangerous...'); // (in the journal, under the quest on)
   }
@@ -1310,13 +1282,16 @@ function updateTalentCue() {
   }
 }
 
-// ---------- The map's cue: once the quest to open it is on (after the talents') and he steps out of the
-// safe zones, the slash done, everything holds still; as for the strike, a line over him and over it, in gold, what to press: till M opens the map ----------
+// ---------- The map's cue: once he's picked up the fellow's crate (and got up), a map packed in it with his
+// glassware, everything holds still; as for the strike, a line over him and over it, in gold, what to press: till M opens the map.
+// Till then there's no map at all: no minimap, no M ----------
 
-const MAP_LINE = 'I think I saw something to the west...'; // he says it
+const MAP_LINE = 'Oh, I think I’ll keep this one for myself!'; // he says it (of the map)
 const MAP_PROMPT = 'Check the map!'; // and over his line
 let mapCue = { phase: 'armed', t: 0 }; // armed, frozen, pressed, done; t: seconds in the phase
 let mapKnown = false; // the minimap and M: none till its cue holds him (Check the map!)
+// He's stepped out of the escape pod's and the backpack's safe zones on the way to the safe space (after the talents'): they're gone from then on
+let podLeft = false;
 
 // ---------- The journal's cue: from the start everything holds still, a line over him and over it, in
 // gold, what to press, as for the map: till J opens the journal. Till then there's no quest at the top
@@ -1350,8 +1325,9 @@ function updateJournalCue(dt) {
 }
 
 function updateMapCue(dt) {
+  if (!podLeft && quests.target() === 'campfire' && talentCue === 'done' && !talentsOpen && !inSafe(me.x, me.y)) podLeft = true;
   if (mapCue.phase === 'armed') {
-    if (quests.cue() === 'map' && !mapOpen && !me.slash && talentCue === 'done' && !talentsOpen && !inSafe(me.x, me.y)) { // (after the talents', once he steps out of the safe zones)
+    if (hasEquipment && !me.pick && !me.slash && !talentsOpen && !journalOpen && !backpackOpen) { // (the crate picked up, once he's up with it)
       mapCue = { phase: 'frozen', t: 0 };
       mapKnown = true; // (the minimap and M from now on)
       speech.say(MAP_LINE, true); // (kept up till the map's open)
@@ -1428,7 +1404,7 @@ const LOG = 'colonism.log', CRUMB = 'colonism.crumb';
 const logLines = (() => { try { return JSON.parse(localStorage.getItem(LOG)) ?? []; } catch { return []; } })();
 // What's going on, in short, for the log
 const gameState = () => ({
-  map: mapOpen, journal: journalOpen, talents: talentsOpen, character: characterOpen, backpack: backpackOpen, journalCue: journalCue.phase, backpackCue: backpackCue.phase, strike: strike.phase, talentCue, mapCue: mapCue.phase,
+  map: mapOpen, journal: journalOpen, talents: talentsOpen, backpack: backpackOpen, journalCue: journalCue.phase, backpackCue: backpackCue.phase, strike: strike.phase, talentCue, mapCue: mapCue.phase,
   quest: quests.save().current, hp: me.hp, level, bugs: bugs.length, particles: particles.length, fires: fireSources.length, x: Math.round(me.x), y: Math.round(me.y),
 });
 function log(what, detail = '') {
@@ -1545,15 +1521,7 @@ function step(real) {
     requestAnimationFrame(frame);
     return;
   }
-  if (buffOpen) { // the buff's window: everything holds still under it, till he's chosen
-    spaceHit = attackPressed = false;
-    heldAim ??= mouse && { ...mouse };
-    render(clock, 0, realDt);
-    const held = BUFFS.findIndex((_, i) => keys.has(`Digit${i + 1}`)) + 1;
-    buffs.draw(canvas.width / 2, canvas.height / 2, mouse, held, character.maxed); // (a stat at its most: its card dim)
-    requestAnimationFrame(frame);
-    return;
-  }
+
   if (talentCue === 'frozen' && !talentsOpen) { // the same, till he takes a talent (T opens them)
     spaceHit = attackPressed = false;
     heldAim ??= mouse && { ...mouse };
@@ -1572,17 +1540,8 @@ function step(real) {
     requestAnimationFrame(frame);
     return;
   }
-  if (characterOpen) { // the character's window: everything holds still under it, as under the talents'
-    spaceHit = attackPressed = false;
-    heldAim ??= mouse && { ...mouse };
-    render(clock, 0, realDt);
-    const box = character.draw(canvas.width / 2, canvas.height / 2);
-    labels.tag('Character', 'C', Math.round(box.left) - labels.keyWidth('C'), box.top - 10, 1);
-    labels.tag('Close', 'Esc', Math.round(box.left + box.w) - labels.tagWidth('Close', 'Esc'), box.top - 10, keys.has('Escape') ? 1 : 0);
-    requestAnimationFrame(frame);
-    return;
-  }
-  if (backpackOpen) { // the backpack's window: everything holds still under it, as under the character's
+
+  if (backpackOpen) { // the backpack's window: everything holds still under it, as under the talents'
     spaceHit = attackPressed = false;
     heldAim ??= mouse && { ...mouse };
     render(clock, 0, realDt);
@@ -1656,9 +1615,9 @@ function step(real) {
     if (intoBag) hitBag();
     if (intoEgg) { // (cut where its side's nearest him)
       const a = Math.atan2(egg.y - me.y, egg.x - me.x);
-      hurtEgg(harm(BUG_CUT), a, egg.x - Math.cos(a) * egg.solid.r, egg.y - Math.sin(a) * egg.solid.r);
+      hurtEgg(BUG_CUT, a, egg.x - Math.cos(a) * egg.solid.r, egg.y - Math.sin(a) * egg.solid.r);
     }
-    for (const b of cutBugs) hurtBug(b, harm(BUG_CUT), Math.atan2(b.y - me.y, b.x - me.x));
+    for (const b of cutBugs) hurtBug(b, BUG_CUT, Math.atan2(b.y - me.y, b.x - me.x));
     if (cutBugs.length) sounds.cut('flesh');
     else if (intoBag || intoEgg) sounds.cut('bag');
   }
@@ -1724,7 +1683,7 @@ function step(real) {
     else if (me.moving) me.dir = dirFromVector(dx, dy);
     if (me.moving) {
       me.gait = gait(me.dir, dx, dy); // forwards, backpedaling or sidestepping, each its own speed
-      move(me, dx, dy, dt, GAIT_SPEED[me.gait] * (1 + speedBuff()) * (me.crouch ? CROUCH_SPEED : 1)); // (speedBuff: agility's, if he chose it)
+      move(me, dx, dy, dt, GAIT_SPEED[me.gait] * (me.crouch ? CROUCH_SPEED : 1));
       // A footstep on the sand at each half of the legs' cycle, softer sneaking: counted on evenly by
       // the time gone at the gait's pace (a change of gait, or the clock reset by a slash, never sets
       // two off at once); the first soon after he sets off
@@ -1783,7 +1742,7 @@ function step(real) {
   }
   quests.update({ dt, running: me.moving && !me.roll, dx, dy, aim: aim && Math.atan2(aim.dy, aim.dx), hasBackpack, bottlesBroken, bagHits, talentsTaken: TALENTS.filter((tl) => talents.has(tl.id)).length, firesideUsed, fellowTalked, fellowAsked, hasEquipment, equipmentReturned, fellowThreatened, eggKilled });
   if (!fellowSeen && Math.hypot(fellowObj.x - me.x, fellowObj.y - me.y) < VISION) fellowSeen = true; // (on the map from now on)
-  if (!wellSeen && Math.hypot(wellObj.x - me.x, wellObj.y - me.y) - wellObj.solid.r < WELL_FOUND) wellSeen = true; // (come up to it: on the map from now on)
+  if (!stationSeen && Math.hypot(stationObj.x - me.x, stationObj.y - me.y) < VISION) stationSeen = true; // (seen: on the map from now on)
   for (const o of objects) if (o.breathes) o.frame = Math.floor((clock / 1000) * 1.3) % (sprites.object(o.name)?.frames ?? 1); // (breathing, slowly)
   if (saving) {
     saving = false;
@@ -1868,7 +1827,7 @@ const sectorCells = () => SECTORS.flatMap((s) => [
   ...(s.explored() ? [{ at: s.at(), color: 'rgba(175, 225, 175, 0.17)' }] : []),
   ...(s.activity() ? [{ at: s.at(), hatch: 'rgba(175, 225, 175, 0.35)' }] : []),
 ]);
-let checkpointReached = false, firesideUsed = false, fellowTalked = false, fellowSeen = false, wellSeen = false, saving = false;
+let checkpointReached = false, firesideUsed = false, fellowTalked = false, fellowSeen = false, stationSeen = false, saving = false;
 let fellowAsk = false; // what to ask the fellow is up over the hero (by number), till he picks one or walks off
 // What he can ask the fellow (each while it can be: when()), numbered in order: what comes of it at once
 // (now()), as he asks; the fellow answers once he's said it (typed out, and a moment), and then what
@@ -1921,11 +1880,11 @@ let planTold = false, fellowThreatened = false; // (the evacuation plan's: he's 
 // beacon shows it (its case there till it's picked up); the huge thing he spoke of, by the pole (see shared/world.js)
 const PLACES = { structures: STRUCTURES, equipment: EQUIPMENT, hugeThing: HUGE_THING, wreck: WRECK };
 const fellowObj = OBJECTS.find((o) => o.name === 'fellow'); // (firesideUsed: its campfire used, the quest to get there done; saving: to keep where he's got to, this frame)
-const wellObj = OBJECTS.find((o) => o.name === 'well'), WELL_FOUND = 2.5 * UNITS_PER_M; // (the well by the fellow's crate: how near he comes, from its stones, to have found it)
+const stationObj = OBJECTS.find((o) => o.name === 'antenna'); // (the research station by the fellow's crate, its mast: on the map once he's seen it)
 function saveCheckpoint() {
   checkpointReached = true;
   try {
-    localStorage.setItem(CHECKPOINT, JSON.stringify({ level, xp, points, talents: talents.taken(), stats: character.stats, medkits, fellowAsked, equipment: hasEquipment, equipmentReturned, fellowThreatened, wellSeen, quests: quests.save() }));
+    localStorage.setItem(CHECKPOINT, JSON.stringify({ level, xp, points, talents: talents.taken(), medkits, fellowAsked, equipment: hasEquipment, equipmentReturned, fellowThreatened, stationSeen, quests: quests.save() }));
   } catch { /* (no storage: nothing kept) */ }
 }
 function loadCheckpoint() {
@@ -1938,8 +1897,7 @@ function loadCheckpoint() {
   checkpointReached = firesideUsed = true;
   ({ level, xp, points, medkits } = saved);
   talents.restore(saved.talents);
-  character.restore(saved.stats);
-  me.hp = maxHp = HP + character.stats.strength; // (strength's health on top: all of it)
+  me.hp = maxHp; // (all of it)
   quests.load(saved.quests);
   fellowAsked = saved.fellowAsked ?? quests.started('hugeThing'); // (the fellow's answer had: all it opened) (older checkpoints: by the quest it used to open too)
   fellowTalked = fellowAsked;
@@ -1948,7 +1906,7 @@ function loadCheckpoint() {
   hasEquipment = !!saved.equipment; // (picked up before: its crate gone)
   equipmentReturned = !!saved.equipmentReturned; // (and handed back to the fellow)
   fellowThreatened = !!saved.fellowThreatened; // (and told what's coming to him)
-  wellSeen = !!saved.wellSeen;
+  stationSeen = !!saved.stationSeen;
   // All that came before it, done: the backpack on, the gun counted out, the bottles and the bag gone,
   // every cue past
   hasBackpack = true;
@@ -1968,9 +1926,9 @@ function loadCheckpoint() {
   journalCue = { phase: 'done', t: 0 };
   backpackCue = { phase: 'done', t: 0 };
   talentCue = 'done';
-  mapCue = { phase: 'done', t: 0 };
-  mapKnown = true;
-  bugMet = true;
+  mapCue = { phase: hasEquipment ? 'done' : 'armed', t: 0 }; // (the map: had once the crate's been picked up)
+  mapKnown = hasEquipment;
+  podLeft = bugMet = true;
   // Him by the fire, on its near side (the chart comes to him on the first frame)
   me.x = STRUCTURES.x;
   me.y = STRUCTURES.y + 1.6 * UNITS_PER_M;
@@ -2055,18 +2013,18 @@ function render(now, dt, talkDt = dt) {
   // Things lying flat on the ground go under the characters whichever side they stand on
   for (const o of placed) if (o.flat) sprites.drawObject(ctx, o.sprite ?? o.name, 'body', o.sx, o.sy);
   drawParticles(PX, onGround); // the bits of things with them
-  if (SHOW_SAFE) { // the safe zones still on: a faint green over the sand in each, a dashed green ring round it
+  if (SHOW_SAFE) { // the safe zones still on: a faint green over the sand in each
     ctx.save();
     for (const z of safeZones) {
       if (z.gone()) continue;
       ctx.beginPath();
-      ctx.ellipse(camX + toScreenX(z.o.x), camY + toScreenY(z.o.y), toScreenX(z.r), toScreenY(z.r), 0, 0, Math.PI * 2);
+      if (z.rect) { // (its corners, turned as what it's round)
+        const { dx, dy, w, h } = z.rect;
+        [[-w, -h], [w, -h], [w, h], [-w, h]].forEach(([cx, cy], i) => { const p = modelToWorld(z.o, [dx + cx, dy + cy]); ctx[i ? 'lineTo' : 'moveTo'](camX + toScreenX(p.x), camY + toScreenY(p.y)); });
+        ctx.closePath();
+      } else ctx.ellipse(camX + toScreenX(z.o.x), camY + toScreenY(z.o.y), toScreenX(z.r), toScreenY(z.r), 0, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(90, 220, 120, 0.06)';
       ctx.fill();
-      ctx.setLineDash([12, 8]);
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(110, 235, 135, 0.6)';
-      ctx.stroke();
     }
     ctx.restore();
   }
@@ -2175,14 +2133,22 @@ function render(now, dt, talkDt = dt) {
   const me0 = pose(me);
   // The cursor a crosshair while it's within his gun's range of him (drawn over everything, last); out
   // past it, or with a window open (the map, the journal, the talents) or no gun yet, it's there as ever
-  const pointing = mouse && hasBackpack && !mapOpen && !journalOpen && !talentsOpen && !characterOpen && !backpackOpen && Math.hypot(mouse.x - me0.x, mouse.y - me0.y) < toScreenX(shotRange());
+  const pointing = mouse && hasBackpack && !mapOpen && !journalOpen && !talentsOpen && !backpackOpen && Math.hypot(mouse.x - me0.x, mouse.y - me0.y) < toScreenX(shotRange());
   canvas.style.cursor = pointing ? 'none' : '';
   // An object in front of us that covers our body is drawn see-through
   const hidesMe = (o) => {
-    if ((o.footprint ? tallY(o) : o.y) <= me.y || ['bottles', 'bag', 'bag_stand', 'campfire'].includes(o.name) || o.name.startsWith('wreck') || o.name.startsWith('container')) return false; // (a big thing: by its footprint) // (the crate's low, the bottles and the bag slim, the campfire low, the wreck and its containers buried, lower than him: they stay solid)
+    if ((o.footprint ? tallY(o) : o.y) <= me.y || ['bottles', 'bag', 'bag_stand', 'campfire', 'garden', 'barrel'].includes(o.name) || o.name.startsWith('wreck') || o.name.startsWith('container') || o.name.startsWith('fence')) return false; // (a big thing: by its footprint) // (the crate's low, the bottles and the bag slim, the campfire, the garden bed and the barrel low, the wreck and its containers buried, lower than him, the fence seen through: they stay solid)
     const b = sprites.objectBounds(o.sprite ?? o.name, o.sx, o.sy);
     const inset = (b.x1 - b.x0) * 0.15; // the frame is a bit larger than the crown
     return me0.x > b.x0 + inset && me0.x < b.x1 - inset && me0.y - 40 > b.y0 && me0.y - 40 < o.sy;
+  };
+  // A fence panel on a side running up and down the screen, him inside by it (not past its ends): under
+  // him, all of it (he stands beside it, never behind it)
+  const insideBy = (o) => {
+    if (!o.fence?.side) return false;
+    const dx = (me.x - o.x) / UNITS_PER_M, dy = (me.y - o.y) / UNITS_PER_M, c = Math.cos(o.yaw), s = Math.sin(o.yaw);
+    const along = Math.abs(dx * c + dy * s);
+    return -dx * s + dy * c > 0 && along < o.fence.len / 2 + 0.3 && (along < o.fence.len / 2 || me.y > o.y); // (its model's +y: inwards) (a little past its near end too; past its far end he's behind it: drawn by depth, its raised end over him)
   };
   // A big thing's depth, for the order (o.footprint): in front of him if anywhere in the screen's column
   // he's in (as wide as him) it reaches nearer the camera (lower down) than his feet; behind him if not
@@ -2201,7 +2167,7 @@ function render(now, dt, talkDt = dt) {
   const bodies = [
     // A big thing drawn in bands by how far down the ground each of its pixels stands (sprites.bands): each in
     // its place among the characters, so each bit of it is in front of them or behind them as it should be
-    ...placed.filter((o) => !o.flat && sprites.bands(o.sprite ?? o.name)).flatMap((o) => sprites.bands(o.sprite ?? o.name).map((b) => ({ y: o.y + b.y * UNITS_PER_M, draw: () => sprites.drawBand(ctx, o.sprite ?? o.name, b, o.sx, o.sy, o.y + b.y * UNITS_PER_M > me.y && hidesMe(o) ? 0.45 : 1) }))), // (the bits in front of him see-through, if it covers him)
+    ...placed.filter((o) => !o.flat && sprites.bands(o.sprite ?? o.name)).flatMap((o) => sprites.bands(o.sprite ?? o.name).map((b) => ({ y: insideBy(o) ? me.y - 0.01 : o.y + b.y * UNITS_PER_M, draw: () => sprites.drawBand(ctx, o.sprite ?? o.name, b, o.sx, o.sy, o.y + b.y * UNITS_PER_M > me.y && hidesMe(o) ? 0.45 : 1) }))), // (the bits in front of him see-through, if it covers him)
     ...placed.filter((o) => !o.flat && !sprites.bands(o.sprite ?? o.name)).map((o) => ({ y: o.footprint ? tallY(o) : o.y, draw: () => sprites.drawObject(ctx, o.sprite ?? o.name, 'body', o.sx, o.sy, hidesMe(o) ? 0.45 : 1, o.frame) })),
     ...players.map((p) => ({ y: p.y, draw: () => sprites.drawCharacter(ctx, p.sprite, pose(p)) })),
     ...bugs.map((b) => ({ y: b.y, draw: () => sprites.drawCharacter(ctx, 'bug', bugPose(b)) })),
@@ -2339,7 +2305,7 @@ function render(now, dt, talkDt = dt) {
     { at: POLE, color: '#fff', name: 'N' }, // the poles
     { at: POLE.map((v) => -v), color: '#fff', name: 'S' },
     ...(fellowSeen && goal?.name !== 'fellow' ? [fellowAsks().some((a) => a.side) ? { at: fellowObj.home, color: BLUE, name: fellowObj.label, side: true } : { at: fellowObj.home, color: '#fff', name: fellowObj.label }] : []), // (the fellow, once he's been seen: in blue while he's a side quest to give)
-    ...(wellSeen ? [{ at: wellObj.home, color: '#fff', name: wellObj.label }] : []), // (the well, once he's come up to it)
+    ...(stationSeen ? [{ at: stationObj.home, color: '#fff', name: stationObj.label }] : []), // (the research station, once he's come up to it)
     ...(goal ? [{ at: goal.home, color: GOLD, name: quests.mark() ?? goal.label, quest: true }] : []), // where the quest leads, in gold (as the quest is)
     ...(goal !== STRUCTURES && goal?.name !== 'campfire' && mapCue.phase !== 'armed' ? [{ at: STRUCTURES.home, color: '#fff', name: STRUCTURES.label }] : []), // (and the safe place, once he's said where it is: white, when it's not where the quest leads)
     ...(quests.started('hugeThing') && !eggKilled ? [{ at: HUGE_THING.home, color: BLUE, name: HUGE_THING.label, side: true }] : []), // (the huge thing, once the fellow's told him of it till it's killed: blue, as its quest)
@@ -2368,12 +2334,11 @@ function render(now, dt, talkDt = dt) {
     { key: 'RMB', icon: 'crosshair', held: triggerHeld, cool: ammo?.reload != null ? 1 - ammo.reload / reloadTime() : 0, count: ammo && ammo.reload == null ? ammo.mag : null },
   ], W / 2, H - GLOBE_MARGIN, dt, { level, k: level >= MAX_LEVEL ? 1 : xp / xpFor(level), points });
   // The top left corner, growing down from it, always in this order, each once it's there: the backpack
-  // (B: once its cue's held him), the character (C: once he's chosen a buff), the talents (T: once there
+  // (B: once its cue's held him), the talents (T: once there
   // are some to have, his second level on), the journal (J: once he's opened it), the map (M: once he
   // knows of it); one under the other, on one white edge, the keys out to the corner's margin
   const menu = [
     ...(backpackKnown() ? [['Backpack', 'B', backpackOpen]] : []),
-    ...(characterKnown() ? [['Character', 'C', characterOpen]] : []),
     ...(level > 1 ? [['Talents', 'T', talentsOpen]] : []),
     ...(journalKnown() ? [['Journal', 'J', journalOpen]] : []),
     ...(mapKnown ? [['Map', 'M', mapOpen]] : []),

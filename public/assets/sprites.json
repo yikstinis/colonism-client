@@ -855,35 +855,19 @@
         ]
       ]
     },
-    "rocket": {
-      "image": "rocket.png",
+    "bag": {
+      "image": "bag.png",
       "frame": [
         60,
-        70
+        80
       ],
       "anchor": [
         30,
-        50
-      ],
-      "tail": [
-        -0.06187499999999999,
-        -0.4079625,
-        0.714470958122162
+        58
       ]
     },
-    "crater": {
-      "image": "crater.png",
-      "frame": [
-        240,
-        210
-      ],
-      "anchor": [
-        120,
-        105
-      ]
-    },
-    "bag": {
-      "image": "bag.png",
+    "bag_stand": {
+      "image": "bag_stand.png",
       "frame": [
         60,
         80
@@ -934,28 +918,6 @@
           48
         ]
       }
-    },
-    "crater_small": {
-      "image": "crater_small.png",
-      "frame": [
-        80,
-        72
-      ],
-      "anchor": [
-        40,
-        36
-      ]
-    },
-    "bag_stand": {
-      "image": "bag_stand.png",
-      "frame": [
-        60,
-        80
-      ],
-      "anchor": [
-        30,
-        58
-      ]
     },
     "campfire": {
       "image": "campfire.png",
@@ -1204,25 +1166,179 @@
         ]
       }
     },
-    "well": {
-      "image": "well.png",
+    "antenna": {
+      "image": "antenna.png",
+      "frame": [
+        100,
+        140
+      ],
+      "anchor": [
+        56,
+        112
+      ],
+      "shadow": {
+        "image": "antenna_shadow.png",
+        "frame": [
+          140,
+          120
+        ],
+        "anchor": [
+          70,
+          60
+        ]
+      }
+    },
+    "transformer": {
+      "image": "transformer.png",
+      "frame": [
+        76,
+        72
+      ],
+      "anchor": [
+        38,
+        44
+      ],
+      "shadow": {
+        "image": "transformer_shadow.png",
+        "frame": [
+          140,
+          120
+        ],
+        "anchor": [
+          70,
+          60
+        ]
+      }
+    },
+    "barrel": {
+      "image": "barrel.png",
+      "frame": [
+        44,
+        50
+      ],
+      "anchor": [
+        22,
+        34
+      ],
+      "shadow": {
+        "image": "barrel_shadow.png",
+        "frame": [
+          60,
+          50
+        ],
+        "anchor": [
+          30,
+          25
+        ]
+      }
+    },
+    "garden": {
+      "image": "garden.png",
       "frame": [
         84,
-        80
+        90
       ],
       "anchor": [
         42,
         46
       ],
       "shadow": {
-        "image": "well_shadow.png",
+        "image": "garden_shadow.png",
         "frame": [
-          130,
+          100,
           100
         ],
         "anchor": [
-          65,
+          50,
           50
+        ]
+      }
+    },
+    "loose_earth": {
+      "image": "loose_earth_none.png",
+      "frame": [
+        1,
+        1
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "decal": {
+        "image": "loose_earth.png",
+        "frame": [
+          700,
+          700
+        ],
+        "anchor": [
+          350,
+          350
+        ]
+      }
+    },
+    "loose_earth_pod": {
+      "image": "loose_earth_pod_none.png",
+      "frame": [
+        1,
+        1
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "decal": {
+        "image": "loose_earth_pod.png",
+        "frame": [
+          1354,
+          1315
+        ],
+        "anchor": [
+          938,
+          416
+        ]
+      }
+    },
+    "asphalt_station": {
+      "image": "asphalt_station_none.png",
+      "frame": [
+        1,
+        1
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "decal": {
+        "image": "asphalt_station.png",
+        "frame": [
+          542,
+          542
+        ],
+        "anchor": [
+          271,
+          271
+        ]
+      }
+    },
+    "asphalt": {
+      "image": "asphalt_none.png",
+      "frame": [
+        1,
+        1
+      ],
+      "anchor": [
+        0,
+        0
+      ],
+      "decal": {
+        "image": "asphalt.png",
+        "frame": [
+          579,
+          579
+        ],
+        "anchor": [
+          290,
+          290
         ]
       }
     },
@@ -2055,6 +2171,800 @@
         200,
         180,
         60
+      ]
+    },
+    "fence_0": {
+      "image": "fence_0.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_0_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_0_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_1": {
+      "image": "fence_1.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_1_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_1_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_2": {
+      "image": "fence_2.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_2_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_2_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_3": {
+      "image": "fence_3.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_3_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_3_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_holed_0": {
+      "image": "fence_holed_0.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_holed_0_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_holed_0_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_holed_1": {
+      "image": "fence_holed_1.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_holed_1_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_holed_1_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_holed_2": {
+      "image": "fence_holed_2.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_holed_2_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_holed_2_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_holed_3": {
+      "image": "fence_holed_3.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_holed_3_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_holed_3_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_0": {
+      "image": "fence_leaning_0.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_0_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_0_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_1": {
+      "image": "fence_leaning_1.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_1_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_1_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_2": {
+      "image": "fence_leaning_2.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_2_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_2_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_3": {
+      "image": "fence_leaning_3.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_3_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_3_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_back_0": {
+      "image": "fence_leaning_back_0.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_back_0_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_back_0_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_back_1": {
+      "image": "fence_leaning_back_1.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_back_1_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_back_1_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_back_2": {
+      "image": "fence_leaning_back_2.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_back_2_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_back_2_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_back_3": {
+      "image": "fence_leaning_back_3.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_back_3_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_back_3_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_holed_0": {
+      "image": "fence_leaning_holed_0.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_holed_0_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_holed_0_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_holed_1": {
+      "image": "fence_leaning_holed_1.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_holed_1_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_holed_1_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_holed_2": {
+      "image": "fence_leaning_holed_2.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_holed_2_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_holed_2_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_holed_3": {
+      "image": "fence_leaning_holed_3.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_holed_3_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_holed_3_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_torn_0": {
+      "image": "fence_leaning_torn_0.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_torn_0_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_torn_0_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_torn_1": {
+      "image": "fence_leaning_torn_1.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_torn_1_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_torn_1_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_torn_2": {
+      "image": "fence_leaning_torn_2.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_torn_2_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_torn_2_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_leaning_torn_3": {
+      "image": "fence_leaning_torn_3.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_leaning_torn_3_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_leaning_torn_3_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_torn_0": {
+      "image": "fence_torn_0.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_torn_0_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_torn_0_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_torn_1": {
+      "image": "fence_torn_1.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_torn_1_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_torn_1_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_torn_2": {
+      "image": "fence_torn_2.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_torn_2_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_torn_2_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "fence_torn_3": {
+      "image": "fence_torn_3.png",
+      "frame": [
+        112,
+        112
+      ],
+      "anchor": [
+        56,
+        64
+      ],
+      "depth": {
+        "image": "fence_torn_3_depth.png",
+        "offset": 100,
+        "per": 100
+      },
+      "shadow": {
+        "image": "fence_torn_3_shadow.png",
+        "frame": [
+          120,
+          120
+        ],
+        "anchor": [
+          60,
+          60
+        ]
+      }
+    },
+    "rocket": {
+      "image": "rocket.png",
+      "frame": [
+        60,
+        70
+      ],
+      "anchor": [
+        30,
+        50
+      ],
+      "tail": [
+        -0.06187499999999999,
+        -0.4079625,
+        0.714470958122162
+      ]
+    },
+    "crater": {
+      "image": "crater.png",
+      "frame": [
+        240,
+        210
+      ],
+      "anchor": [
+        120,
+        105
+      ]
+    },
+    "crater_small": {
+      "image": "crater_small.png",
+      "frame": [
+        80,
+        72
+      ],
+      "anchor": [
+        40,
+        36
       ]
     }
   }
