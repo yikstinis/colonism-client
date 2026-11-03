@@ -7,6 +7,7 @@ const TEXT = `300 12px ${FONT}`;
 export const TYPE_RATE = 40; // letters per second
 const MAX_W = 230; // px, the text wraps to this
 const LINE_H = 16;
+const PAD = 3; // px over the first row and under the last
 
 // ctx: the canvas to draw on; voices: a list shared by everyone who speaks (the hero, the fellow):
 // one at a time, a line started cuts off whoever else was saying one
@@ -62,8 +63,10 @@ export function createSpeech(ctx, voices = []) {
       ctx.font = TEXT;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
-      const w = Math.round(Math.max(...line.rows.map((r) => ctx.measureText(r).width)) + 21);
-      const h = line.rows.length * LINE_H + 8;
+      // (sized as a label card's, labels.js: one row is the same 22 px high, the text 20 px wider, so a
+      // choice's card and the line it's said as match)
+      const w = Math.round(Math.max(...line.rows.map((r) => ctx.measureText(r).width)) + 20);
+      const h = line.rows.length * LINE_H + PAD * 2;
       const left = Math.round(edge ?? x - w / 2) + 0.5, top = Math.round(y - 6 - h) + 0.5;
       ctx.globalAlpha = fade;
       // The plate, square on the left with a thick white edge, rounded on the right
@@ -76,13 +79,14 @@ export function createSpeech(ctx, voices = []) {
       ctx.stroke();
       ctx.fillStyle = '#fff';
       ctx.fillRect(left - 0.5, top - 0.5, 3, h + 1);
-      // The text, typed out letter by letter across the rows
+      // The text, typed out letter by letter across the rows (on whole pixels, as a card's: the plate's
+      // on the half pixel, so left + 11 isn't)
       let budget = Math.floor(line.t * TYPE_RATE); // letters typed so far
       const cap = ctx.measureText('H').actualBoundingBoxAscent;
       line.rows.forEach((row, i) => {
         const shown = row.slice(0, Math.max(0, budget));
         budget -= row.length + 1;
-        if (shown) ctx.fillText(shown, left + 11, Math.round(top + 4 + LINE_H * (i + 0.5) + cap / 2));
+        if (shown) ctx.fillText(shown, Math.round(left + 11),Math.round(top + PAD + LINE_H * (i + 0.5) + cap / 2));
       });
       ctx.globalAlpha = 1;
       return { top, edge: left };

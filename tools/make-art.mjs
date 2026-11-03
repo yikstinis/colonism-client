@@ -1450,63 +1450,80 @@ function makeGarage() {
   };
 }
 
-// ---------- The fellow: an old scientist, stooped, in a long white lab coat, by the garage ----------
+// ---------- The fellow: an old scientist, stooped, in a yellow hazmat suit, by the garage ----------
 
 const FELLOW_W = 96, FELLOW_H = 120, FELLOW_ANCHOR = [48, 94], FELLOW_FRAMES = 4; // (frames: his breathing, in and out)
-const FELLOW_SCALE = 1.3; // drawn this much bigger than his model: as the hero is, a little shorter than him
+const FELLOW_SCALE = 1.3, FELLOW_TALL = 1.16, FELLOW_HEAD = 0.82; // drawn this much bigger than his model; his body this much taller again (as tall as the hero), his head this much smaller
 const FELLOW_SHADOW_W = 120, FELLOW_SHADOW_H = 90, FELLOW_SHADOW_ANCHOR = [60, 50];
 const FELLOW_RAMPS = [
   ramp('#1a0e0b', '#341c15', '#53301f', '#73452e', '#935e41', '#b27a57', '#cc9873', '#e4b894'), // skin
-  ramp('#26272a', '#3a3b3f', '#505156', '#68696e', '#818287', '#9b9ca0', '#b8b8bb', '#d6d6d6'), // the lab coat: white, gone grey
-  ramp('#0d1219', '#152030', '#1e2e44', '#283d59', '#344e6e', '#426084', '#53739a', '#6688b0'), // his shirt: blue
-  ramp('#110e0b', '#1d1813', '#2a231b', '#383023', '#463c2c', '#554936', '#645640', '#73634b'), // trousers: brown
-  ramp('#060608', '#0c0c10', '#131318', '#1b1b22', '#25252e', '#30303b', '#3d3d4a', '#4c4c5c'), // shoes, the glasses' frames
-  ramp('#3a3a3c', '#505052', '#68686a', '#808082', '#99999b', '#b3b3b4', '#cdcdce', '#e8e8e8'), // his hair, his beard: white
+  ramp('#3a2c04', '#66500a', '#927610', '#bb9c16', '#dcbc1e', '#f0d42c', '#fbe550', '#fff28a'), // the hazmat suit: chemical yellow
+  ramp('#2e2204', '#4e3c07', '#70580b', '#927410', '#b28e14', '#cca61a', '#e0ba22', '#eecb34'), // its hood's elastic rim, its seams: a darker yellow
+  ramp('#060608', '#0c0c10', '#131318', '#1b1b22', '#25252e', '#30303b', '#3d3d4a', '#4c4c5c'), // rubber boots, gloves, the glasses' frames
+  ramp('#5a5a5e', '#76767a', '#929296', '#acacb0', '#c4c4c8', '#d9d9dc', '#ebebed', '#fafafa'), // his hair, his beard, his moustache, his brows: white
   ramp('#1c2a33', '#2a3e4b', '#3a5464', '#4c6b7e', '#628498', '#7c9eb1', '#9cbac9', '#c2d6e0'), // the glasses' lenses
 ];
-const [F_SKIN, F_COAT, F_SHIRT, F_TROUSERS, F_BLACK, F_HAIR, F_GLASS] = [0, 1, 2, 3, 4, 5, 6];
+const [F_SKIN, F_SUIT, F_RIM, F_BLACK, F_BEARD, F_GLASS] = [0, 1, 2, 3, 4, 5];
 
-// Model space, meters, his feet over the origin, facing +y (the camera): a stout old man, stooped,
-// his head craned forward; a white lab coat to his knees over a blue shirt, his trousers and shoes
-// under it (his feet together); bald on top, wild white hair round the sides and back, a white beard and moustache, round
-// glasses; his hands clasped behind his back. b (0..1): how far through a breath (the
-// chest, the shoulders and the head up a little)
+// Model space, meters, his feet over the origin, facing +y (the camera): a lean old man, stooped,
+// his head craned forward; a loose yellow hazmat suit, all one piece, from his black rubber boots to
+// the hood pulled down behind his neck; bald on top, wild white hair round the sides; a big bushy white beard spilling down over its chest (seen from
+// above too), a white moustache, round glasses; his arms hanging by his sides, in black rubber gloves. b (0..1):
+// how far through a breath (the chest, the shoulders and the head up a little)
 function fellowModel(b = 0) {
   const parts = FELLOW_RAMPS.map(() => []);
   const up = 0.012 * b, E = (c, r) => ellipsoid(c, r), C = (a, c, r0, r1 = r0) => capsule(a, c, r0, r1);
   for (const sx of [-1, 1]) {
-    parts[F_BLACK].push(C([sx * 0.05, -0.03, 0.04], [sx * 0.065, 0.11, 0.035], 0.042, 0.035)); // shoes, together
-    parts[F_TROUSERS].push(C([sx * 0.05, 0, 0.07], [sx * 0.06, 0.01, 0.5], 0.05, 0.056)); // legs, standing close together
+    parts[F_BLACK].push(C([sx * 0.068, -0.02, 0.04], [sx * 0.078, 0.09, 0.034], 0.04, 0.033)); // the boots' feet...
+    parts[F_BLACK].push(C([sx * 0.068, -0.005, 0.045], [sx * 0.067, 0, 0.11], 0.044, 0.046)); // ...and their short shafts, to the ankle
+    parts[F_SUIT].push(C([sx * 0.067, 0, 0.12], [sx * 0.062, 0.01, 0.82], 0.052, 0.064)); // the suit's legs, loose, over them
+    parts[F_RIM].push(C([sx * 0.067, 0, 0.125], [sx * 0.067, 0, 0.135], 0.054)); // (the cuffs' elastic at the ankles)
   }
-  // The coat: flaring a little to its hem, the chest stooped forward
-  parts[F_COAT].push(E([0, 0, 0.72], [0.23, 0.18, 0.27]), E([0, 0.02, 1.0], [0.24, 0.19, 0.21]), E([0, 0.04, 1.2 + up], [0.22, 0.15, 0.15]));
-  parts[F_COAT].push(E([0, 0.09, 0.95 + up * 0.5], [0.2, 0.15, 0.17])); // his belly, round under the coat (a stout old man)
-  parts[F_COAT].push(E([0, 0.05, 1.32 + up], [0.23, 0.11, 0.07])); // its shoulders
-  parts[F_SHIRT].push(E([0, 0.17, 1.22 + up], [0.05, 0.03, 0.1])); // the shirt, in its open front
-  for (const sx of [-1, 1]) { // the arms in their sleeves, behind his back, the hands clasped there
-    const sh = [sx * 0.23, 0.03, 1.31 + up], el = [sx * 0.25, -0.1, 1.07 + up * 0.5], wr = [sx * 0.07, -0.21, 0.93];
-    parts[F_COAT].push(C(sh, el, 0.05, 0.046), C(el, wr, 0.046, 0.04));
+  // The body: lean, the suit hanging loose on it, the chest stooped forward
+  parts[F_SUIT].push(E([0, 0, 0.86], [0.14, 0.11, 0.12]), E([0, 0.02, 1.03], [0.14, 0.115, 0.17]), E([0, 0.04, 1.2 + up], [0.135, 0.11, 0.14]));
+  parts[F_SUIT].push(E([0, 0.05, 1.3 + up], [0.125, 0.085, 0.065])); // its shoulders, narrow and sloping (an old man's)
+  parts[F_RIM].push(C([0, 0.12, 0.8], [0, 0.17, 1.14], 0.011)); // the zip's flap, down its front
+  for (const sx of [-1, 1]) { // the arms in their loose sleeves, hanging by his sides, a little bent forward
+    const sh = [sx * 0.13, 0.03, 1.25 + up], el = [sx * 0.155, 0.0, 1.04 + up * 0.5], wr = [sx * 0.15, 0.07, 0.86];
+    parts[F_SUIT].push(C(sh, el, 0.042, 0.038), C(el, wr, 0.038, 0.034));
+    parts[F_BLACK].push(E([sx * 0.148, 0.085, 0.8], [0.028, 0.034, 0.046])); // the hands, in black rubber gloves
   }
-  parts[F_SKIN].push(E([0, -0.225, 0.92], [0.055, 0.035, 0.04])); // the hands, clasped
   // The neck and the head, craned forward
   parts[F_SKIN].push(C([0, 0.05, 1.35 + up], [0, 0.1, 1.44 + up], 0.042, 0.038));
   const H = [0, 0.12, 1.53 + up]; // (the head's middle)
   const at = (x, y, z) => [H[0] + x, H[1] + y, H[2] + z];
-  parts[F_SKIN].push(E(at(0, 0, 0), [0.074, 0.083, 0.094])); // the skull, bald on top
-  parts[F_SKIN].push(C(at(0, 0.08, 0.0), at(0, 0.095, -0.03), 0.014, 0.018)); // the nose
-  for (const sx of [-1, 1]) parts[F_SKIN].push(E(at(sx * 0.074, 0, -0.005), [0.012, 0.02, 0.026])); // the ears
-  for (const [x, y, z, r] of [[-0.075, -0.02, 0.02, 0.05], [0.075, -0.02, 0.02, 0.05], [-0.06, -0.06, 0.04, 0.045], [0.06, -0.06, 0.04, 0.045], [0, -0.075, 0.02, 0.055], [-0.085, 0.01, 0.06, 0.03], [0.085, 0.01, 0.06, 0.03]])
-    parts[F_HAIR].push(E(at(x, y, z), [r, r * 0.9, r * 0.85])); // his hair: bald on top, white and wild round the sides and back
-  parts[F_HAIR].push(E(at(0, 0.06, -0.085), [0.052, 0.042, 0.055]), E(at(0, 0.085, -0.035), [0.04, 0.016, 0.013])); // the beard, the moustache
-  for (const sx of [-1, 1]) parts[F_GLASS].push(E(at(sx * 0.03, 0.082, 0.01), [0.022, 0.006, 0.019])); // the glasses' lenses...
-  parts[F_BLACK].push(C(at(-0.01, 0.086, 0.012), at(0.01, 0.086, 0.012), 0.004)); // ...the bridge between them
+  parts[F_SUIT].push(E([0, -0.1, 1.24 + up], [0.095, 0.05, 0.075]), E([0, -0.105, 1.15 + up], [0.075, 0.04, 0.055])); // the hood, down: lying flat on his back, under the neck
+  parts[F_RIM].push(E([0, -0.085, 1.3 + up], [0.08, 0.035, 0.02])); // (its elastic rim, round the back of the collar)
+  const before = parts.map((prims) => prims.length); // (the head's from here on: drawn smaller, below)
+  parts[F_SKIN].push(E(at(0, 0.02, 0), [0.074, 0.083, 0.094])); // the skull, bald, shining on top
+  for (const sx of [-1, 1]) parts[F_SKIN].push(E(at(sx * 0.074, 0.02, -0.005), [0.012, 0.02, 0.026])); // the ears
+  for (const [x, y, z, r] of [[-0.075, -0.01, 0.0, 0.045], [0.075, -0.01, 0.0, 0.045], [-0.055, -0.05, 0.02, 0.042], [0.055, -0.05, 0.02, 0.042], [0, -0.065, 0.0, 0.05], [-0.082, 0.03, 0.04, 0.026], [0.082, 0.03, 0.04, 0.026]])
+    parts[F_BEARD].push(E(at(x, y, z), [r, r * 0.9, r * 0.85])); // what's left of his hair: white, wild round the sides and back
+  parts[F_SKIN].push(C(at(0, 0.1, 0.0), at(0, 0.118, -0.03), 0.015, 0.019)); // the nose
+  for (const sx of [-1, 1]) parts[F_BEARD].push(C(at(sx * 0.018, 0.1, 0.038), at(sx * 0.048, 0.088, 0.042), 0.009)); // bushy white brows
+  // The beard: big and bushy, white, from the cheeks spilling down over the suit's chest
+  for (const [x, y, z, r] of [[0, 0.085, -0.07, [0.078, 0.05, 0.058]], [-0.045, 0.07, -0.045, [0.03, 0.035, 0.045]], [0.045, 0.07, -0.045, [0.03, 0.035, 0.045]],
+    [0, 0.1, -0.13, [0.074, 0.05, 0.066]], [0, 0.11, -0.2, [0.058, 0.045, 0.065]], [0, 0.115, -0.26, [0.04, 0.035, 0.05]]])
+    parts[F_BEARD].push(E(at(x, y, z), r));
+  parts[F_BEARD].push(E(at(-0.025, 0.112, -0.035), [0.035, 0.018, 0.014]), E(at(0.025, 0.112, -0.035), [0.035, 0.018, 0.014])); // the moustache, drooping
+  for (const sx of [-1, 1]) parts[F_GLASS].push(E(at(sx * 0.03, 0.104, 0.012), [0.022, 0.006, 0.019])); // the glasses' lenses...
+  parts[F_BLACK].push(C(at(-0.01, 0.108, 0.014), at(0.01, 0.108, 0.014), 0.004)); // ...the bridge between them
+  // The head, smaller than modelled: shrunk round the top of the neck, where it stays put
+  const P = [0, 0.1, 1.44 + up], S = FELLOW_HEAD, sp = (x, y, z) => [P[0] + (x - P[0]) * S, P[1] + (y - P[1]) * S, P[2] + (z - P[2]) * S];
+  parts.forEach((prims, i) => prims.slice(before[i]).forEach((p) => {
+    if (p.kind === 1) Object.assign(p, { ...Object.fromEntries(['cx', 'cy', 'cz'].map((k, j) => [k, sp(p.cx, p.cy, p.cz)[j]])), rx: p.rx * S, ry: p.ry * S, rz: p.rz * S });
+    else Object.assign(p, { ...Object.fromEntries(['ax', 'ay', 'az'].map((k, j) => [k, sp(p.ax, p.ay, p.az)[j]])), bx: p.bx * S, by: p.by * S, bz: p.bz * S, inv: p.inv / (S * S), r0: p.r0 * S, r1: p.r1 * S });
+  }));
   const fields = parts.map((prims) => (prims.length ? bodySdf([{ k: 0.012, prims }], 0.004) : () => 1e9));
-  const K = FELLOW_SCALE, sdf = (x, y, z) => Math.max(Math.min(...fields.map((f) => f(x / K, y / K, z / K))), -z / K) * K; // (scaled up)
+  // Scaled up, and his body (up to the neck) stretched taller still: the head kept its shape
+  const K = FELLOW_SCALE, T = FELLOW_TALL, NECK = 1.35, unz = (z) => (z < NECK * T ? z / T : z - NECK * (T - 1));
+  const scaled = (f, x, y, z) => f(x / K, y / K, unz(z / K));
+  const sdf = (x, y, z) => Math.max(Math.min(...fields.map((f) => scaled(f, x, y, z))), -z / K) * K / T; // (/ T: by its most stretched, so it never oversteps)
   return {
     sdf, shape: sdf,
     material: (x, y, z) => {
       let best = 0, d = 1e9;
-      fields.forEach((f, i) => { if (f(x / K, y / K, z / K) < d) { d = f(x / K, y / K, z / K); best = i; } });
+      fields.forEach((f, i) => { const v = scaled(f, x, y, z); if (v < d) { d = v; best = i; } });
       return best;
     },
   };

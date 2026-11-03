@@ -263,7 +263,7 @@ OBSTACLES.push(...[0.15, -0.3].flatMap((d) => [-0.45, 0, 0.45].map((m) => ({ ...
 // The fellow: an old scientist, standing out in front of the garage by its open doorway (meters, in its
 // model), facing the camera; he stops the hero (not shots: they'd go into him)
 const FELLOW_SOLID = { ...modelToWorld(GARAGE, [0.55, GARAGE_SIZE[1] + 0.9]), r: 0.3 * UNITS_PER_M, of: 'garage' };
-OBJECTS.push({ name: 'fellow', x: FELLOW_SOLID.x, y: FELLOW_SOLID.y, label: 'Fellow', solid: FELLOW_SOLID, say: 'Oh, a visitor! I hate visitors! Haven’t had any in ages... Are you going to kill me?', speaks: true, breathes: true }); // (speaks: his line's his own, over his head)
+OBJECTS.push({ name: 'fellow', x: FELLOW_SOLID.x, y: FELLOW_SOLID.y, label: 'Fellow', solid: FELLOW_SOLID, say: 'Oh, a visitor! I hate visitors! Haven’t had any in years... Are you going to kill me?', speaks: true, breathes: true }); // (speaks: his line's his own, over his head)
 OBSTACLES.push(FELLOW_SOLID);
 
 // The huge thing the fellow saw near the pole (see quests.js), in the middle of the map's cell C1: an
