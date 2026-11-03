@@ -37,6 +37,7 @@ shows it as a globe turning under the hero, the capsule marked on it.
 - `tools/make-art.mjs` — generates the art and `sprites.json` (`npm run art`, ~1.5 min):
   the hero is a smooth 3D body (`tools/lib/sdf-body.mjs`) rendered into pixel art, and so are the landing capsule,
   the backpack, the wrecked army bed by it, a crate of bottles to shoot, past it a smashed bedside table and a punching bag to try the knife on.
+  Over the sectors round here stand little volcanoes (`VOLCANO_KINDS` in `shared/world.js`), only for the look of it: squat cones of dark slag with green or yellow acid boiling in the crater, its reek pouring out of it and lying round the foot as a fog.
   Out in the West (sector D2) lies the fellow's equipment: a waist-high wooden crate with test tubes and flasks packed in it, a stone desert well by it, in a safe zone of their own; hold E to pick the crate up.
 
 Env: `PORT`.

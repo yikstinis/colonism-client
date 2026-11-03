@@ -459,6 +459,17 @@ export function fissurePoints(kind, step) {
 }
 const STREWN_CELLS = ['C1', 'D1', 'C2', 'D2', 'C3', 'D3'], STREWN_CLEAR = 5 * UNITS_PER_M;
 const FISSURES_EACH = 14; // (cracks in each sector)
+// Little volcanoes, only for the look of it: squat cones of dark rock, acid boiling in the crater on top
+// (green or yellow), its reek pouring out of it, drifting low round its foot as a fog (see client.js).
+// The kinds by sprite name: the acid's color, how wide its foot is (radius, meters), how high it stands
+// (meters), the crater's radius (meters)
+export const VOLCANO_KINDS = {
+  volcano_green: { acid: 'green', r: 0.8, h: 0.9, crater: 0.15 },
+  volcano_yellow: { acid: 'yellow', r: 0.9, h: 1.0, crater: 0.17 },
+  volcano_small_green: { acid: 'green', r: 0.55, h: 0.55, crater: 0.11 },
+  volcano_small_yellow: { acid: 'yellow', r: 0.6, h: 0.6, crater: 0.12 },
+};
+const VOLCANOES_EACH = 3; // (in each sector)
 // Ravens, each on its own on the ground round the sectors (see client.js: they fly off as he comes): each
 // { flock (which it's with), home (its point on the ball), dir (which way it faces) }
 export const RAVENS = [];
@@ -499,6 +510,24 @@ const STREWN_AWAY = [[STRUCTURES, 22], [WRECK, 30], [HUGE_THING, 12], [EQUIPMENT
       taken.push(at);
       n++;
     }
+  // The volcanoes: VOLCANOES_EACH in each sector (their own draw: the rest stays where it was), clear of
+  // everything; a solid circle round the foot (walked round, shot over)
+  {
+    let vseed = 31;
+    const vrandom = () => ((vseed = (vseed * 16807) % 2147483647) - 1) / 2147483646;
+    for (const cell of STREWN_CELLS)
+      for (let n = 0, tries = 0; n < VOLCANOES_EACH && tries < 3000; tries++) {
+        const at = chartPoint(CHART0, cellPoint(cell, 0.08 + 0.84 * vrandom(), 0.08 + 0.84 * vrandom()));
+        const kinds = Object.keys(VOLCANO_KINDS), kind = kinds[Math.floor(vrandom() * kinds.length)], v = VOLCANO_KINDS[kind];
+        if (taken.some((p) => Math.hypot(p.x - at.x, p.y - at.y) < STREWN_CLEAR + v.r * UNITS_PER_M)) continue;
+        if (STREWN_AWAY.some(([p, m]) => Math.hypot(p.x - at.x, p.y - at.y) < m * UNITS_PER_M)) continue;
+        const name = `volcano_${cell}_${n}`, solid = { ...at, r: v.r * 0.8 * UNITS_PER_M, of: name };
+        OBJECTS.push({ name, sprite: kind, ...at, volcano: kind, solid });
+        OBSTACLES.push(solid);
+        taken.push(at);
+        n++;
+      }
+  }
   // The ravens: RAVEN_FLOCKS in each sector, each on its own, on a spot clear of things
   for (const cell of STREWN_CELLS)
     for (let n = 0, tries = 0; n < RAVEN_FLOCKS && tries < 200; tries++) {

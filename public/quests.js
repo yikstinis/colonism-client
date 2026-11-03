@@ -37,8 +37,9 @@ function spinAround() {
   };
 }
 
-// box: the panel element; side: the side quests' (under it); done(): called as each one's done
-export function createQuests(box, side, done = () => {}) {
+// box: the panel element; side: the side quests' (under it); done(): called as each one's done;
+// started(): as a side one's taken (start)
+export function createQuests(box, side, done = () => {}, started = () => {}) {
   const quests = [
     {
       title: 'Look around',
@@ -211,6 +212,7 @@ export function createQuests(box, side, done = () => {}) {
     start(id) {
       sides[id].on = true;
       renderSides(true);
+      started();
     },
     started: (id) => !!sides[id].on,
     finished: (id) => !!sides[id].on && sides[id].steps.every((s) => s.done), // (and done)

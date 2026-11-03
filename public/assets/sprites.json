@@ -1880,6 +1880,182 @@
         180,
         60
       ]
+    },
+    "volcano_green": {
+      "image": "volcano_green.png",
+      "frame": [
+        71,
+        86
+      ],
+      "anchor": [
+        36,
+        50
+      ],
+      "shadow": {
+        "image": "volcano_green_shadow.png",
+        "frame": [
+          119,
+          122
+        ],
+        "anchor": [
+          60,
+          61
+        ]
+      },
+      "decal": {
+        "image": "volcano_green_decal.png",
+        "frame": [
+          146,
+          137
+        ],
+        "anchor": [
+          73,
+          69
+        ]
+      },
+      "vent": [
+        0,
+        0,
+        0.66
+      ],
+      "ventR": 0.12,
+      "reekColor": [
+        110,
+        180,
+        70
+      ]
+    },
+    "volcano_yellow": {
+      "image": "volcano_yellow.png",
+      "frame": [
+        78,
+        93
+      ],
+      "anchor": [
+        39,
+        54
+      ],
+      "shadow": {
+        "image": "volcano_yellow_shadow.png",
+        "frame": [
+          126,
+          128
+        ],
+        "anchor": [
+          63,
+          64
+        ]
+      },
+      "decal": {
+        "image": "volcano_yellow_decal.png",
+        "frame": [
+          152,
+          143
+        ],
+        "anchor": [
+          76,
+          72
+        ]
+      },
+      "vent": [
+        0,
+        0,
+        0.76
+      ],
+      "ventR": 0.136,
+      "reekColor": [
+        200,
+        180,
+        60
+      ]
+    },
+    "volcano_small_green": {
+      "image": "volcano_small_green.png",
+      "frame": [
+        55,
+        66
+      ],
+      "anchor": [
+        28,
+        38
+      ],
+      "shadow": {
+        "image": "volcano_small_green_shadow.png",
+        "frame": [
+          103,
+          107
+        ],
+        "anchor": [
+          52,
+          54
+        ]
+      },
+      "decal": {
+        "image": "volcano_small_green_decal.png",
+        "frame": [
+          129,
+          121
+        ],
+        "anchor": [
+          65,
+          61
+        ]
+      },
+      "vent": [
+        0,
+        0,
+        0.31000000000000005
+      ],
+      "ventR": 0.08800000000000001,
+      "reekColor": [
+        110,
+        180,
+        70
+      ]
+    },
+    "volcano_small_yellow": {
+      "image": "volcano_small_yellow.png",
+      "frame": [
+        58,
+        71
+      ],
+      "anchor": [
+        29,
+        41
+      ],
+      "shadow": {
+        "image": "volcano_small_yellow_shadow.png",
+        "frame": [
+          106,
+          110
+        ],
+        "anchor": [
+          53,
+          55
+        ]
+      },
+      "decal": {
+        "image": "volcano_small_yellow_decal.png",
+        "frame": [
+          132,
+          125
+        ],
+        "anchor": [
+          66,
+          63
+        ]
+      },
+      "vent": [
+        0,
+        0,
+        0.36
+      ],
+      "ventR": 0.096,
+      "reekColor": [
+        200,
+        180,
+        60
+      ]
     }
   }
 }

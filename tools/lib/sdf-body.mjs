@@ -97,7 +97,9 @@ const norm3 = (x, y, z) => { const l = Math.hypot(x, y, z); return [x / l, y / l
 // the focus point), elev (camera elevation, radians), yaw (model rotation), camDist (meters,
 // smaller = stronger perspective), focusZ, ramps (dark -> light colors per material),
 // material(x, y, z) -> index into ramps (model space), outline color, bound [z, radius] (meters,
-// a sphere around the model; defaults fit a standing person)
+// a sphere around the model; defaults fit a standing person), fade(x, y, z) -> 0..1 (optional, model
+// space: how much of the bit there shows; less, it's dithered away into what's under it, no outline
+// drawn along it: a thing's foot sunk soft into the ground)
 export function renderBody(sdf, o) {
   const { W, H, anchor, pxPerM, elev, yaw, camDist, focusZ, ramps } = o;
   const material = o.material ?? (() => 0);
@@ -175,6 +177,7 @@ export function renderBody(sdf, o) {
   const mats = new Uint8Array(W * H);
   const level = new Float32Array(W * H).fill(-1);
   const depth = new Float32Array(W * H).fill(1e9);
+  const soft = new Uint8Array(W * H); // (fading away there: no outline along it)
   for (let py = 0; py < H; py++)
     for (let px = 0; px < W; px++) {
       // 4 rays for crisp coverage; shade the first hit
@@ -184,6 +187,11 @@ export function renderBody(sdf, o) {
         if (h) { cover++; hit = hit ?? h; }
       }
       if (cover < 2) continue;
+      if (o.fade) {
+        const f = o.fade(hit[0] * cy + hit[1] * sy, -hit[0] * sy + hit[1] * cy, hit[2]);
+        if (f < 1) soft[py * W + px] = 1;
+        if (f < (BAYER[(py % 4) * 4 + (px % 4)] + 0.5) / 16) { level[py * W + px] = -2; continue; } // (dithered away)
+      }
       level[py * W + px] = shade(hit[0], hit[1], hit[2]);
       depth[py * W + px] = hit[3];
       if (o.groundY) o.groundY[py * W + px] = hit[1] * gy; // (how far down the ground the bit seen here stands, as the game lays it out)
@@ -217,10 +225,10 @@ export function renderBody(sdf, o) {
   for (let py = 0; py < H; py++)
     for (let px = 0; px < W; px++) {
       const i = py * W + px;
-      if (level[i] >= 0) continue;
+      if (level[i] >= 0 || level[i] === -2) continue;
       const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([ox, oy]) => {
         const x = px + ox, y = py + oy;
-        return x >= 0 && y >= 0 && x < W && y < H && level[y * W + x] >= 0;
+        return x >= 0 && y >= 0 && x < W && y < H && level[y * W + x] >= 0 && !soft[y * W + x];
       });
       if (near) {
         out.set([...o.outline, 255], i * 4);

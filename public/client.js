@@ -1,5 +1,5 @@
 import {
-  SPAWN, OBJECTS, REACH, ROLL_TIME, ROLL_COOLDOWN, UNITS_PER_M, VISION, GAIT_SPEED, CHART0, PLANET, SYSTEM, PLANET_R, POLE, STRIKE_SLANT, STRIKE_WAY, BAG_HITS, STRUCTURES, HUGE_THING, EQUIPMENT, WRECK, SAFE_ZONES, RAVENS, modelToWorld, solidAt, gapTo, TURRET_FRAMES, TURRET_RANGE, TURRET_MUZZLE, recenter, move, dirFromVector, dirVector, gait, rayHit, addObstacle, removeObstacle, startRoll, updateRoll, CROUCH_SPEED, CROUCH_AIM, CROUCH_CYCLE, AIM_OUT_TIME, AIM_OFFSETS, FIRE_ROUNDS, RELOAD_TIME, GAIT_CYCLE, SHOT_RANGE, SHOT_SPREAD, shotSway, PICK_TIME, PICK_GRAB, SLASH_TIME, SLASH_COOLDOWN, SLASH_RANGE, SLASH_ARC, BUG_BITE_TIME, BUG_BITE_SNAP,
+  SPAWN, OBJECTS, REACH, ROLL_TIME, ROLL_COOLDOWN, UNITS_PER_M, VISION, GAIT_SPEED, CHART0, PLANET, SYSTEM, PLANET_R, POLE, STRIKE_SLANT, STRIKE_WAY, BAG_HITS, STRUCTURES, HUGE_THING, EQUIPMENT, WRECK, SAFE_ZONES, RAVENS, VOLCANO_KINDS, modelToWorld, solidAt, gapTo, TURRET_FRAMES, TURRET_RANGE, TURRET_MUZZLE, recenter, move, dirFromVector, dirVector, gait, rayHit, addObstacle, removeObstacle, startRoll, updateRoll, CROUCH_SPEED, CROUCH_AIM, CROUCH_CYCLE, AIM_OUT_TIME, AIM_OFFSETS, FIRE_ROUNDS, RELOAD_TIME, GAIT_CYCLE, SHOT_RANGE, SHOT_SPREAD, shotSway, PICK_TIME, PICK_GRAB, SLASH_TIME, SLASH_COOLDOWN, SLASH_RANGE, SLASH_ARC, BUG_BITE_TIME, BUG_BITE_SNAP,
 } from '/shared/world.js';
 import { cellPoint } from '/shared/grid.js';
 import { ZOOM, HEIGHT_PX, toScreenX, toScreenY } from '/render/view.js';
@@ -80,7 +80,7 @@ const objects = OBJECTS.filter((o) => !o.later); // what still lies on the map (
 
 // ---------- Quests: look around, find the backpack (see quests.js) ----------
 
-const quests = createQuests(questBox, sideBox, () => sounds.questDone()); // (a chord as each one's done)
+const quests = createQuests(questBox, sideBox, () => sounds.questDone(), () => sounds.questDone()); // (a chord as each one's done, the same as a side one's taken: as the story's next one comes in with the last one's)
 const journal = createJournal(ctx); // every quest so far (J)
 const guide = createGuide(ctx); // the arrow to the current quest's target
 const sideGuide = createGuide(ctx); // and the side quests', in blue
@@ -440,6 +440,48 @@ const REEK = [120, 170, 70]; // its color
 const REEK_NEAR = 2 * VISION; // things reek only this near him (farther, it's not seen: no smoke for it)
 const rand = (a, b) => a + Math.random() * (b - a);
 
+// ---------- The volcanoes (only for the look of it): their reek pouring out of the crater, a fog of it
+// drifting low round the foot, the crater glowing faintly ----------
+
+const VOLCANO_GLOW_NEAR = 3 * VISION; // their craters glow over the dark this far off
+const volcanoes = objects.filter((o) => o.volcano).map((o) => ({ o, kind: VOLCANO_KINDS[o.volcano], art: sprites.object(o.volcano) }));
+
+function updateVolcanoes(dt) {
+  for (const v of volcanoes) {
+    const R = v.kind.r * UNITS_PER_M, wide = v.art.ventR * UNITS_PER_M, tint = v.art.reekColor;
+    if (Math.hypot(v.o.x - me.x, v.o.y - me.y) > REEK_NEAR + R) continue;
+    // Its reek pouring up out of the crater, drifting off on the wind...
+    if (Math.random() < dt * 9 * v.kind.r) particles.push({
+      kind: 'smoke', tint, x: v.o.x + rand(-1, 1) * wide, y: v.o.y + rand(-0.6, 0.6) * wide, h: v.art.vent[2],
+      vx: rand(3, 7), vy: rand(-3, 0), vh: rand(0.4, 0.75), age: 0, life: rand(3.5, 5), grow: rand(10, 16) * Math.max(0.7, v.kind.r),
+    });
+    // ...and a fog of it lying low round its foot, slow, thin
+    if (Math.random() < dt * 3 * Math.max(0.6, v.kind.r)) {
+      const a = rand(0, Math.PI * 2), k = rand(0.7, 2.4) * R;
+      particles.push({
+        kind: 'smoke', tint, alpha: 0.35, x: v.o.x + Math.cos(a) * k, y: v.o.y + Math.sin(a) * k * 0.8, h: rand(0, 0.2),
+        vx: rand(1.5, 4), vy: rand(-1, 1), vh: rand(0.02, 0.08), age: 0, life: rand(5, 8), grow: rand(14, 24),
+      });
+    }
+  }
+}
+
+// The craters' glow, over the dark (seen from afar): faint, breathing
+function drawVolcanoGlow(now) {
+  ctx.globalCompositeOperation = 'lighter';
+  volcanoes.forEach((v, i) => {
+    if (Math.abs(v.o.x - me.x) > VOLCANO_GLOW_NEAR || Math.abs(v.o.y - me.y) > VOLCANO_GLOW_NEAR) return;
+    const x = camX + toScreenX(v.o.x), y = camY + toScreenY(v.o.y) - v.art.vent[2] * HEIGHT_PX * UNITS_PER_M;
+    const k = 0.8 + 0.2 * Math.sin(now * 0.0021 + i * 1.7), r = toScreenX(v.art.ventR * UNITS_PER_M) * 2.6, [cr, cg, cb] = v.art.reekColor;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(${cr},${cg},${cb},${0.22 * k})`);
+    g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  });
+  ctx.globalCompositeOperation = 'source-over';
+}
+
 // shotDt: the time for what the gun throws (cases, splinters): it goes on while the drill holds the world
 function updateParticles(dt, shotDt = dt) {
   smokeTimer += dt;
@@ -560,7 +602,7 @@ function drawParticles(P, which) {
     } else if (p.kind === 'smoke') {
       const fadeIn = Math.min(1, p.age / (0.15 * p.life));
       const g = 60 + 70 * k; // dark near the pod, lighter grey as it thins out (or its own color, lighter too)
-      sctx.fillStyle = p.tint ? `rgba(${p.tint.map((v) => Math.round(v + 40 * k)).join(',')},${0.45 * fadeIn * (1 - k) ** 1.3})`
+      sctx.fillStyle = p.tint ? `rgba(${p.tint.map((v) => Math.round(v + 40 * k)).join(',')},${0.45 * (p.alpha ?? 1) * fadeIn * (1 - k) ** 1.3})`
         : `rgba(${g},${g + 3},${g + 8},${0.7 * fadeIn * (1 - k) ** 1.3})`;
       sctx.beginPath();
       sctx.arc(sx, sy, 2 + k * p.grow, 0, Math.PI * 2);
@@ -1581,6 +1623,7 @@ function step(real) {
   const drilling = drill === 'on'; // the drill: the world stands still, he can only aim, crouch and shoot
   const worldDt = drilling ? 0 : dt;
   updateStrike(worldDt);
+  updateVolcanoes(worldDt);
   updateTalentCue();
   updateMapCue(dt);
 
@@ -2195,6 +2238,7 @@ function render(now, dt, talkDt = dt) {
   }
   crumb('render: the dark');
   drawVision(PX, me0.x, me0.y); // and the dark over all of it
+  drawVolcanoGlow(now); // the volcanoes' craters glowing: over the dark (seen from afar)
   if (strike.phase === 'falling') { // the shell coming down on the zone, faster and faster (over the dark: it must be seen)
     const at = shellAt(strike.t / STRIKE_FALL);
     const x = snap(sx + at.x), y = snap(sy + at.y), tail = sprites.object('rocket').tail;

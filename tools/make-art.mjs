@@ -13,7 +13,7 @@ import { ramp, rng, Sheet } from './lib/image.mjs';
 import { SHADOW_LIGHT, bodySdf, box, capsule, cone, ellipsoid, renderBody, renderShadow } from './lib/sdf-body.mjs';
 import {
   AIM_IN_TIME, AIM_OFFSETS, AIM_OUT_TIME, BACKPACK, BUG_BITE_SNAP, BUG_BITE_TIME, RELOAD_TIME, CROUCH_CYCLE, BED, BEDDING, BEDDING_FIRES, BLANKET, FIRE_ROUNDS, GAIT_CYCLE, GLADE_R, MATTRESS, PICK_GRAB,
-  CRATER_R, PICK_TIME, PILLOW, POD, POD_FIRES, POD_SCALE, ROLL_TIME, STRIKE_SLANT, STRIKE_WAY, SLASH_TIME, STAND, TURRET_FRAMES, GARAGE, GARAGE_SIZE, GARAGE_LEAF, EGG_R, WRECK_PIECES, WRECK_SHIP, WRECK_SHOWN, wreckJag, CONTAINER_KINDS, FISSURE_KINDS, fissurePoints, fissureWidth,
+  CRATER_R, PICK_TIME, PILLOW, POD, POD_FIRES, POD_SCALE, ROLL_TIME, STRIKE_SLANT, STRIKE_WAY, SLASH_TIME, STAND, TURRET_FRAMES, GARAGE, GARAGE_SIZE, GARAGE_LEAF, EGG_R, WRECK_PIECES, WRECK_SHIP, WRECK_SHOWN, wreckJag, CONTAINER_KINDS, FISSURE_KINDS, fissurePoints, fissureWidth, VOLCANO_KINDS,
 } from '../shared/world.js';
 
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets');
@@ -2628,6 +2628,128 @@ function makeFissure(kind) {
   return { image: `${kind}.png`, frame: [W, H], anchor, reek, reekColor: ACID[FISSURE_KINDS[kind].acid][1] };
 }
 
+// ---------- Little volcanoes: squat cones of dark rock, acid boiling in the crater on top (see VOLCANO_KINDS) ----------
+
+const VOLCANO_RAMPS = [
+  ramp('#0c0a0c', '#151216', '#1f1b20', '#2a252b', '#363037', '#433c44', '#514952', '#605761'), // the rock: dark, a little purple, as cooled slag
+  ramp('#16130f', '#241f19', '#342d25', '#463d32', '#584d40', '#6b5f4f', '#7f715f', '#938470'), // ash and cinders, paler, round its foot and in its gullies
+  ramp('#3a2f22', '#53442f', '#6c5a3e', '#86704e', '#9e875f', '#b59d72', '#cab387', '#dcc79c'), // sand blown up on it
+  ramp('#2f6a1a', '#3c8222', '#4a962a', '#5aa834', '#6cba3e', '#84cc4c', '#a0dc62', '#c4ee86'), // green acid: it glows (bright all the way down)
+  ramp('#86700e', '#9e8516', '#b49a20', '#c8ae2c', '#d8c03a', '#e6d04e', '#f0de6a', '#faee96'), // yellow acid
+  ramp('#141a10', '#1e2816', '#2a381c', '#364a22', '#435c2a', '#527034', '#62843f', '#749a4c'), // the rock stained green by it, round the crater and its trickles
+  ramp('#1c180c', '#2c2612', '#3e3618', '#52481e', '#665a26', '#7c6e30', '#92823c', '#a8964a'), // stained yellow: sulfur crusts
+];
+const [V_ROCK, V_ASH, V_DUST, V_GREEN, V_YELLOW, V_STAIN_GREEN, V_STAIN_YELLOW] = [0, 1, 2, 3, 4, 5, 6];
+const VOLCANO_ACID = { green: [V_GREEN, V_STAIN_GREEN], yellow: [V_YELLOW, V_STAIN_YELLOW] };
+
+// Model space, meters: a cone, its flanks curving out into a skirt at the foot, gullies running down
+// them, a few lumps of slag stuck on; a bowl sunk in its top, the acid pooled at its bottom, a trickle or
+// two of it run over the lip down the front (where it's seen) and stained the rock round it
+function volcanoModel(kind) {
+  const { r: R, h: Hh, crater: C, acid } = VOLCANO_KINDS[kind], [ACID_M, STAIN_M] = VOLCANO_ACID[acid];
+  const r = rng(kind.length * 977 + kind.charCodeAt(8) * 13);
+  const lumps = [];
+  for (let i = 0; i < 6; i++) {
+    const a = r() * Math.PI * 2, k = 0.35 + r() * 0.5, s = (0.12 + r() * 0.12) * R;
+    lumps.push(ellipsoid([Math.cos(a) * R * k, Math.sin(a) * R * k, Hh * (1 - k) * 0.85], [s, s * 0.85, s * 0.7]));
+  }
+  const body = bodySdf([{ k: 0.3, prims: [cone([0, 0, 0], [0, 0, Hh], R * 0.78, C * 1.45), ellipsoid([0, 0, 0], [R, R * 0.94, Hh * 0.3])] }, { k: 0.05, prims: lumps }], 0.12);
+  const bowl = bodySdf([{ k: 0.01, prims: [ellipsoid([0, 0, Hh + 0.12], [C, C, 0.5])] }], 0.01);
+  const poolZ = Hh - 0.24, pool = bodySdf([{ k: 0.01, prims: [cone([0, 0, poolZ - 0.4], [0, 0, poolZ], C * 0.8, C * 0.8)] }], 0.01);
+  const gullies = 7 + Math.floor(r() * 4), twist = r() * 6;
+  const rough = (x, y, z) => {
+    const a = Math.atan2(y, x), rr = Math.hypot(x, y);
+    return 0.022 * (Math.sin(x * 11 + y * 7) * Math.sin(y * 9 - z * 8) + 0.5 * Math.sin(z * 15 + x * 6))
+      + 0.03 * Math.min(1, rr / R * 2) * Math.max(0, Math.sin(a * gullies + twist + z * 1.5)) ** 3; // (ridges between the gullies)
+  };
+  const shape = (x, y, z) => 0.8 * Math.min(Math.max(body(x, y, z) + rough(x, y, z), -bowl(x, y, z)), pool(x, y, z));
+  // Its trickles: down the front (south, +y), each at an angle round it, wandering a little as it goes
+  const trickles = [Math.PI / 2 + (r() - 0.5) * 0.9, Math.PI / 2 + (r() < 0.5 ? -1 : 1) * (0.7 + r() * 0.5)].slice(0, R > 1.2 ? 2 : 1);
+  const len = trickles.map(() => 0.35 + r() * 0.35); // (how far down: of the flank)
+  const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+  return {
+    shape,
+    sdf: (x, y, z) => Math.max(shape(x, y, z), -z),
+    fade: (x, y, z) => Math.min(1, Math.max(0, (z - 0.03) / (0.12 + 0.12 * R)) + 0.08 * Math.sin(Math.atan2(y, x) * 7 + x * 3)), // its foot sunk into the ash, ragged
+    material: (x, y, z) => {
+      const rr = Math.hypot(x, y), a = Math.atan2(y, x), n = hash(Math.floor(x * 22), Math.floor((y + z) * 22));
+      if (z > poolZ - 0.06 && rr < C * 0.82 && z < poolZ + 0.05) { // the pool: scum floating on it, swirled, a bubble or two
+        const swirl = Math.sin(x * 19 + Math.sin(y * 23 + x * 4) * 2.2);
+        return swirl > 0.9 || hash(Math.floor(x * 40 + 9), Math.floor(y * 40 + 9)) > 0.93 ? STAIN_M : ACID_M;
+      }
+      if (rr < C * 1.25 && z > Hh - 0.45) return n < 0.3 ? V_ROCK : STAIN_M; // its walls and lip, stained
+      const down = 1 - z / Hh; // (0 at the top, 1 at the foot)
+      for (let i = 0; i < trickles.length; i++) {
+        if (down > len[i]) continue;
+        const w = (0.05 + 0.03 * Math.sin(z * 9 + i)) / Math.max(0.2, rr), off = Math.abs(angDiff(a, trickles[i] + 0.12 * Math.sin(z * 5 + i * 2)));
+        if (off < w) return ACID_M;
+        if (off < w * 2.6 && n > 0.25) return STAIN_M;
+      }
+      if (z < 0.3 && hash(Math.floor(x * 20), Math.floor(y * 20)) < 0.75 - z * 2) return V_ASH; // ash round its foot, as on the ground there
+      if (Math.max(0, Math.sin(a * gullies + twist + z * 1.5)) < 0.15 && n > 0.4) return V_ASH; // cinders down the gullies
+      if (n > 0.95) return V_ASH; // pale specks
+      if (n < 0.04) return STAIN_M; // a crust here and there
+      return V_ROCK;
+    },
+  };
+}
+
+// The ground round it: ash and cinders thrown out over the sand, thinning out, dithered into it; specks
+// of the acid spat out on it, and its glow, faint
+function volcanoDecal(kind, W, H, anchor) {
+  const { r: R, acid } = VOLCANO_KINDS[kind], rim = ACID[acid][1];
+  const c = new Uint8ClampedArray(W * H * 4), se = Math.sin(ELEV);
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  for (let py = 0; py < H; py++)
+    for (let px = 0; px < W; px++) {
+      const gx = (px + 0.5 - anchor[0]) / PX_PER_M, gy = (py + 0.5 - anchor[1]) / (PX_PER_M * se);
+      const th = (BAYER4[(py % 4) * 4 + (px % 4)] + 0.5) / 16, at = (py * W + px) * 4;
+      const d = Math.hypot(gx, gy) + 0.15 * Math.sin(Math.atan2(gy, gx) * 5 + 1) + (hash(px >> 1, py >> 1) - 0.5) * 0.12;
+      const u = (d - R * 0.8) / 1.6; // (0 at its foot, 1 out where the ash ends)
+      if (u > 1) continue;
+      const spot = hash(Math.floor(gx * 7 + 50), Math.floor(gy * 7 + 50));
+      if (u > 0 && u < 0.45 && spot > 0.975 && hash(px, py) > 0.45) { c.set([...rim, 230], at); continue; } // a speck of acid
+      const ash = (1 - Math.max(0, u)) ** 2; // (thick at its foot, thinning out fast)
+      if (th < ash * 0.8) { const g = hash(px, py) > 0.5 ? [38, 34, 34] : [48, 43, 41]; c.set([...g, Math.round(90 + 100 * ash)], at); continue; }
+      const glow = Math.max(0, 0.5 - u);
+      if (th < glow * 0.3) c.set([...rim, Math.round(60 * glow)], at);
+    }
+  return c;
+}
+
+function makeVolcano(kind) {
+  const { r: R, h: Hh, crater: C } = VOLCANO_KINDS[kind], model = volcanoModel(kind), se = Math.sin(ELEV), ce = Math.cos(ELEV);
+  const W = Math.ceil(2 * (R + 0.15) * PX_PER_M) + 8, below = Math.ceil((R + 0.15) * se * PX_PER_M) + 6;
+  const H = below + Math.ceil(((R + 0.15) * se + Hh * ce) * PX_PER_M) + 10, anchor = [Math.round(W / 2), H - below];
+  const img = renderBody(model.sdf, {
+    W, H, anchor, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+    camDist: 7, focusZ: 0.9, ramps: VOLCANO_RAMPS, material: model.material, fade: model.fade, outline: [8, 6, 8], bound: [Hh * 0.4, Math.hypot(R + 0.2, Hh * 0.7)],
+  });
+  const sh = new Sheet(W, H);
+  sh.blit(img, W, H, 0, 0);
+  save(sh, `${kind}.png`);
+  const SW = Math.ceil(2 * (R + 1.0) * PX_PER_M), SH = Math.ceil(2 * (R + 1.0) * se * PX_PER_M) + 10, sAnchor = [Math.round(SW / 2), Math.round(SH / 2)];
+  const shadow = renderShadow(model.shape, {
+    W: SW, H: SH, anchor: sAnchor, pxPerM: PX_PER_M, elev: ELEV, yaw: 0,
+    camDist: 7, focusZ: 0.9, light: SHADOW_LIGHT, alpha: 0.55, reach: R + 1,
+  });
+  const ss = new Sheet(SW, SH);
+  ss.blit(shadow, SW, SH, 0, 0);
+  save(ss, `${kind}_shadow.png`);
+  const DW = Math.ceil(2 * (R + 1.4) * PX_PER_M), DH = Math.ceil(2 * (R + 1.4) * se * PX_PER_M), dAnchor = [Math.round(DW / 2), Math.round(DH / 2)];
+  const ds = new Sheet(DW, DH);
+  ds.blit(volcanoDecal(kind, DW, DH, dAnchor), DW, DH, 0, 0);
+  save(ds, `${kind}_decal.png`);
+  return {
+    image: `${kind}.png`, frame: [W, H], anchor,
+    shadow: { image: `${kind}_shadow.png`, frame: [SW, SH], anchor: sAnchor },
+    decal: { image: `${kind}_decal.png`, frame: [DW, DH], anchor: dAnchor },
+    // Where its acid boils (meters, model space: the pool's middle), how wide the pool is, and the acid's
+    // color: its reek, its glow (see client.js)
+    vent: [0, 0, Hh - 0.24], ventR: C * 0.8, reekColor: ACID[VOLCANO_KINDS[kind].acid][1],
+  };
+}
+
 // A big thing's depth map, beside its sprite (see render/sprites.js: drawn in bands by it): for each pixel,
 // how far down the ground the bit of it there stands (meters from its anchor, groundY from renderBody), in
 // its red and green ((r * 256 + g) / DEPTH.per - DEPTH.offset); none where there's nothing
@@ -3039,6 +3161,7 @@ const objects = {
   cactus_organ: await part('cactus_organ', () => makeCactus('cactus_organ')), cactus_pear: await part('cactus_pear', () => makeCactus('cactus_pear')), cactus_cluster: await part('cactus_cluster', () => makeCactus('cactus_cluster')), // round the wreck too
   ...Object.fromEntries(await Promise.all(Object.keys(ROCKS).map(async (k) => [k, await part(k, () => makeRock(k))]))), // strewn with the cacti
   ...Object.fromEntries(await Promise.all(Object.keys(FISSURE_KINDS).map(async (k) => [k, await part(k, () => makeFissure(k))]))), // strewn with the cacti and rocks
+  ...Object.fromEntries(await Promise.all(Object.keys(VOLCANO_KINDS).map(async (k) => [k, await part(k, () => makeVolcano(k))]))), // a few in each sector, with them
   ...Object.fromEntries(await Promise.all((WRECK_SHOWN ? Object.keys(CONTAINER_KINDS) : []).map(async (k) => [k, await part(k, () => makeContainer(k))]))), // by the wreck
   ...Object.fromEntries(await Promise.all((WRECK_SHOWN ? WRECK_PIECES : []).map(async (p) => [p.name, await part(p.name, () => makeWreckPiece(p))]))), // the ship's, near the equator, broken in two
   rocket: await part('rocket', makeRocket), crater: await part('crater', makeCrater), crater_small: await part('crater_small', makeSmallCrater),
