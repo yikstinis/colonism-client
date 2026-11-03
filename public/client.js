@@ -11,7 +11,7 @@ import { FONT, GAP as LABEL_GAP, GOLD, BLUE, HOLD_TIME, createLabels } from '/re
 import { createSpeech, TYPE_RATE } from '/render/speech.js';
 import { createGuide } from '/render/guide.js';
 import { createReach } from '/render/reach.js';
-import { createHotbar } from '/render/hotbar.js';
+import { createHotbar, ICONS } from '/render/hotbar.js';
 import { TALENTS, TALENT_POINTS, createTalents } from '/render/talents.js';
 import { lifeBar, RING_STEP, RING_THICK, BAR_LEN, BAR_PERIOD, fade } from '/render/life.js';
 import { createJournal } from '/render/journal.js';
@@ -94,7 +94,7 @@ let buffOpen = false; // (its window up: the game holds till he's chosen)
 const character = createCharacter(ctx); // his stats, the buffs raise them (C: their window)
 let characterOpen = false; // (its window up; C, once he's chosen a buff)
 const characterKnown = () => buffOpen || character.any(); // (a buff to choose, or one chosen: C opens it)
-const backpack = createBackpack(ctx); // what he carries (B: its window; nothing in it yet)
+const backpack = createBackpack(ctx); // what he carries (B: its window; its medicine slot: the medkits)
 let backpackOpen = false; // (its window up; B, once its cue's held him)
 const speedBuff = () => character.stats.agility * 0.01; // how much faster he moves, a part of his speed (1% a point)
 const harm = (n) => (Math.random() < character.stats.intelligence * 0.01 ? n * 2 : n); // his round or cut: twice the harm, by chance (1% a point; his own: not the turret's)
@@ -400,7 +400,7 @@ let heldAim = null; // the cursor as it was when the game last held still (the a
 function aimDirection() {
   const at = heldAim ?? mouse;
   if (!at) return null;
-  const dx = at.x - (camX + toScreenX(me.x)), dy = at.y - (camY + toScreenY(me.y) - 30);
+  const dx = at.x - (camX + toScreenX(me.x)), dy = at.y - (camY + toScreenY(me.y)); // (from his feet, as the reach and the rounds go: the cursor on the aim's line whichever way)
   return Math.hypot(dx, dy) < 6 ? null : { dx, dy };
 }
 
@@ -1543,7 +1543,7 @@ function step(real) {
     spaceHit = attackPressed = false;
     heldAim ??= mouse && { ...mouse };
     render(clock, 0, realDt);
-    const box = backpack.draw(canvas.width / 2, canvas.height / 2);
+    const box = backpack.draw(canvas.width / 2, canvas.height / 2, { medkits });
     labels.tag('Backpack', 'B', Math.round(box.left) - labels.keyWidth('B'), box.top - 10, 1);
     labels.tag('Close', 'Esc', Math.round(box.left + box.w) - labels.tagWidth('Close', 'Esc'), box.top - 10, keys.has('Escape') ? 1 : 0);
     requestAnimationFrame(frame);
@@ -2119,8 +2119,8 @@ function render(now, dt, talkDt = dt) {
   });
   for (const r of seenRavens) sprites.drawCharacterShadow(ctx, 'raven', ravenPose(r, false));
   const me0 = pose(me);
-  // The cursor hidden while it's within his gun's range of him (the aim's shown there); out past it, or
-  // with a window open (the map, the journal, the talents) or no gun yet, it's there as ever
+  // The cursor a crosshair while it's within his gun's range of him (drawn over everything, last); out
+  // past it, or with a window open (the map, the journal, the talents) or no gun yet, it's there as ever
   const pointing = mouse && hasBackpack && !mapOpen && !journalOpen && !talentsOpen && !characterOpen && !backpackOpen && Math.hypot(mouse.x - me0.x, mouse.y - me0.y) < toScreenX(shotRange());
   canvas.style.cursor = pointing ? 'none' : '';
   // An object in front of us that covers our body is drawn see-through
@@ -2366,6 +2366,25 @@ function render(now, dt, talkDt = dt) {
     journal.draw(quests.list(), left, top, width, { x0: nameEnd + 10, x1: closeAt - 10, bottom: head, ceiling: 20 });
     labels.tag('Journal', 'J', Math.round(left) - labels.keyWidth('J'), head, 1);
     labels.tag('Close', 'Esc', closeAt, head, keys.has('Escape') ? 1 : 0);
+    ctx.restore();
+  }
+  // The crosshair where the cursor is, within his gun's range (see pointing): the hotbar's, white,
+  // outlined in black as everything else on the HUD
+  if (pointing) {
+    const x = Math.round(mouse.x) + 0.5, y = Math.round(mouse.y) + 0.5;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 4;
+    ICONS.crosshair(ctx, x, y); // (its path, then its outline over it)
+    ctx.strokeStyle = ctx.fillStyle = '#000';
+    ctx.stroke();
+    ctx.fillRect(x - 2.5, y - 2.5, 4, 4);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ICONS.crosshair(ctx, x, y);
+    ctx.strokeStyle = ctx.fillStyle = '#fff';
+    ctx.stroke();
+    ctx.fillRect(x - 1.5, y - 1.5, 2, 2);
     ctx.restore();
   }
 }

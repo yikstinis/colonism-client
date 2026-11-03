@@ -1,6 +1,6 @@
 // Where a knife slash reaches: a sector on the sand in front of the hero, towards where he aims, under
 // everything standing or lying there, fading out to its sides. Faint while he's armed, so the reach
-// shows; in a slash it flares up. From then till the knife's ready again its dashed edge goes pale and
+// shows; in a slash it flares up. From then till the knife's ready again its solid edge goes pale and
 // fills back in along it, clockwise from one side to the other; full, it flashes a little.
 // The gun's range goes on beyond it as a dashed line, a small arc at its end; firing, the cone
 // between (where the rounds go) is lit faintly, flaring with each one. Anything solid in the way (the
@@ -60,10 +60,10 @@ export function createReach(ctx) {
       ctx.beginPath();
       edge.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
       ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]); // the reach's edge, dashed
+      ctx.setLineDash([]); // the reach's edge, solid (the gun's range past it dashed)
       ctx.strokeStyle = fade(cooling > 0 ? 0.12 : 0.3 + 0.2 * flare + 0.25 * ready); // (pale while the knife's getting ready)
       ctx.stroke();
-      if (cooling > 0) { // getting ready: the edge filled in as far as it's got, clockwise (its dashes on the pale ones)
+      if (cooling > 0) { // getting ready: the edge filled in as far as it's got, clockwise (over the pale one)
         const n = (1 - cooling) * STEPS, i0 = Math.floor(n), [ax, ay] = edge[i0], [bx, by] = edge[Math.min(i0 + 1, STEPS)];
         ctx.beginPath();
         edge.slice(0, i0 + 1).forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));

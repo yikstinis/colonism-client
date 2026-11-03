@@ -16,7 +16,7 @@ const XP_H = 5, XP_GAP = 6; // px: the experience bar's height, between it and t
 
 // The icons: plain white outlines, as simple as can be, centered on (x, y); dim: none left
 const LINE = 'rgba(255, 255, 255, 0.9)', DIM = 'rgba(255, 255, 255, 0.25)';
-const ICONS = {
+export const ICONS = {
   cross(ctx, x, y, dim) { // a plus, its arms as wide as they're long
     const a = 3, l = 9;
     ctx.beginPath();
