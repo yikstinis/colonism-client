@@ -37,6 +37,33 @@ export async function loadSprites(manifestUrl) {
     Object.fromEntries(await Promise.all(Object.entries(group).map(async ([k, v]) => [k, await sheet(v)])));
   const [characters, objects] = await Promise.all([loadGroup(manifest.characters), loadGroup(manifest.objects)]);
 
+  // A big object with a depth map (def.depth: for each pixel, how far down the ground the bit of it there
+  // stands, meters from its anchor, in its red and green: (r * 256 + g) / per - offset): its body cut into
+  // bands of that, each its own small canvas (where its pixels are in the frame), to be put each in its
+  // place among the characters (see client.js)
+  const BAND = 0.25; // meters
+  await Promise.all(Object.values(objects).filter((s) => s.depth).map(async (s) => {
+    const read = (img) => { const c = document.createElement('canvas'); c.width = s.fw; c.height = s.fh; const g = c.getContext('2d'); g.drawImage(img, 0, 0); return g.getImageData(0, 0, s.fw, s.fh).data; };
+    const body = read(s.image), depth = read(await loadImage(base + s.depth.image)), bands = new Map();
+    for (let y = 0; y < s.fh; y++)
+      for (let x = 0; x < s.fw; x++) {
+        const i = (y * s.fw + x) * 4;
+        if (!body[i + 3]) continue;
+        const d = depth[i + 3] ? (depth[i] * 256 + depth[i + 1]) / s.depth.per - s.depth.offset : 0, k = Math.floor(d / BAND);
+        if (!bands.has(k)) bands.set(k, []);
+        bands.get(k).push(i);
+      }
+    s.bands = [...bands.entries()].sort((a, b) => a[0] - b[0]).map(([k, idx]) => {
+      let x0 = s.fw, y0 = s.fh, x1 = 0, y1 = 0;
+      for (const i of idx) { const p = i / 4, x = p % s.fw, y = (p - x) / s.fw; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1); }
+      const c = document.createElement('canvas'); c.width = x1 - x0; c.height = y1 - y0;
+      const g = c.getContext('2d'), img = g.createImageData(c.width, c.height);
+      for (const i of idx) { const p = i / 4, x = p % s.fw, y = (p - x) / s.fw; img.data.set(body.subarray(i, i + 4), ((y - y0) * c.width + (x - x0)) * 4); }
+      g.putImageData(img, 0, 0);
+      return { y: (k + 0.5) * BAND, x0, y0, canvas: c };
+    });
+  }));
+
   // The part of an object's image that's drawn (alpha > 0) in any of its frames, in art pixels from
   // a frame's corner: frames leave room around the thing
   function inkOf(s) {
@@ -110,6 +137,14 @@ export async function loadSprites(manifestUrl) {
     },
 
     object: (name) => objects[name],
+
+    // A big object's depth bands ({ y (meters down the ground from its anchor), ... }), or undefined
+    bands: (name) => objects[name]?.bands,
+    // One of them, the object's anchor at screen (x, y)
+    drawBand(ctx, name, band, x, y) {
+      const s = objects[name], k = s.scale ?? scale;
+      blit(ctx, band.canvas, 0, 0, band.canvas.width, band.canvas.height, Math.round((x - (s.anchor[0] - band.x0) * k) / k) * k, Math.round((y - (s.anchor[1] - band.y0) * k) / k) * k, false, k);
+    },
 
     // An object's layers, each with its anchor at screen (x, y): 'decal' (on the ground, under
     // everything), 'shadow' (under bodies) or 'body' (its frame-th frame, if it has several)

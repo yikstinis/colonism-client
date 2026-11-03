@@ -659,55 +659,6 @@
         ]
       }
     },
-    "mother": {
-      "image": "mother.png",
-      "frame": [
-        230,
-        210
-      ],
-      "anchor": [
-        115,
-        112
-      ],
-      "rows": [
-        "S",
-        "SW",
-        "W",
-        "NW",
-        "N",
-        "NE",
-        "E",
-        "SE"
-      ],
-      "animations": {
-        "idle": {
-          "start": 0,
-          "frames": 4,
-          "fps": 4
-        },
-        "walk": {
-          "start": 4,
-          "frames": 8,
-          "fps": 20
-        },
-        "bite": {
-          "start": 12,
-          "frames": 8,
-          "fps": 20
-        }
-      },
-      "shadow": {
-        "image": "mother_shadow.png",
-        "frame": [
-          300,
-          230
-        ],
-        "anchor": [
-          150,
-          115
-        ]
-      }
-    },
     "raven": {
       "image": "raven.png",
       "frame": [
@@ -1314,28 +1265,6 @@
         ]
       }
     },
-    "wreck": {
-      "image": "wreck.png",
-      "frame": [
-        531,
-        203
-      ],
-      "anchor": [
-        266,
-        113
-      ],
-      "shadow": {
-        "image": "wreck_shadow.png",
-        "frame": [
-          591,
-          253
-        ],
-        "anchor": [
-          296,
-          138
-        ]
-      }
-    },
     "cactus_organ": {
       "image": "cactus_organ.png",
       "frame": [
@@ -1509,94 +1438,6 @@
         "anchor": [
           75,
           60
-        ]
-      }
-    },
-    "wreck_tail": {
-      "image": "wreck_tail.png",
-      "frame": [
-        182,
-        435
-      ],
-      "anchor": [
-        91,
-        229
-      ],
-      "shadow": {
-        "image": "wreck_tail_shadow.png",
-        "frame": [
-          242,
-          485
-        ],
-        "anchor": [
-          121,
-          254
-        ]
-      }
-    },
-    "container_orange": {
-      "image": "container_orange.png",
-      "frame": [
-        150,
-        120
-      ],
-      "anchor": [
-        75,
-        66
-      ],
-      "shadow": {
-        "image": "container_orange_shadow.png",
-        "frame": [
-          190,
-          140
-        ],
-        "anchor": [
-          95,
-          70
-        ]
-      }
-    },
-    "container_white": {
-      "image": "container_white.png",
-      "frame": [
-        150,
-        120
-      ],
-      "anchor": [
-        75,
-        66
-      ],
-      "shadow": {
-        "image": "container_white_shadow.png",
-        "frame": [
-          190,
-          140
-        ],
-        "anchor": [
-          95,
-          70
-        ]
-      }
-    },
-    "container_teal": {
-      "image": "container_teal.png",
-      "frame": [
-        150,
-        120
-      ],
-      "anchor": [
-        75,
-        66
-      ],
-      "shadow": {
-        "image": "container_teal_shadow.png",
-        "frame": [
-          190,
-          140
-        ],
-        "anchor": [
-          95,
-          70
         ]
       }
     },

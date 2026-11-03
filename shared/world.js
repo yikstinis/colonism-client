@@ -275,77 +275,118 @@ OBSTACLES.push(FELLOW_SOLID);
 export const HUGE_THING = { label: 'Huge thing', home: cellPoint('C1') };
 Object.assign(HUGE_THING, chartPoint(CHART0, HUGE_THING.home));
 // The wrecked ship the fellow saw closer to the equator (see quests.js), a little low and right of the middle of the map's cell
-// C3, where the teleportation device is to be got from: a big white ship (as the escape pod), its orange
-// paint worn, come down and broken in two, half buried in the sand (lower than the hero: nothing to see through), its halves lying square to each other, two sides of a square:
-// the front half along the north (narrowing to its crumpled front, holes torn in it), the back half (a
-// big round engine face at its end, the hatch in its side) down the west; their torn ends by
-// the corner between them, a gap left there, the way in (see tools/make-art.mjs). Inside the square, the
-// Mother's ground (see client.js). It stops the hero, and shots; a big safe zone round it. WRECK is its
-// point on the ball ({ home, label }: the quest's arrow and the map's mark go by it), the square's middle
+// C3, where the teleportation device is to be got from: a big cargo hauler come down and broken in two,
+// buried deep (lower than the hero: nothing to see through; the ground's own sand drifted up it, see
+// tools/make-art.mjs): its front half (the bridge at its bow, cargo pods along its spine) lying east, its
+// back half (more pods, the engine block) bent up off it to the north-east, a V, the gap between them;
+// some of its pods torn off, the break ragged, holes torn in its spine, its insides showing. It stops the
+// hero, and shots; a big safe zone round it. WRECK is its point on the ball ({ home, label }: the
+// quest's arrow and the map's mark go by it)
 export const WRECK = { label: 'Ship wreckage', home: cellPoint('C3', 0.6, 0.7) }; // (the whole of it still in the cell)
 Object.assign(WRECK, chartPoint(CHART0, WRECK.home));
-// The ship, whole (meters; x along it from its back end, its front +x; round it, angles from across (y)
-// up (z)): its radius; how high its middle (its axis) lies (sunk); its body [from, to], its front's tip,
-// and how round that is (its radius); how far its engine face sticks out back; the hatch [where along it,
-// round it]; holes torn in its top [where along it, half how long]; antennas [where along it, how tall];
-// boxes of hardware on it [where along it, round it, half how big]; its front sunk deeper [from where
-// along it, how much deeper at its tip], its nose gone under the sand
-export const WRECK_ROCKET = {
-  R: 1.5, zc: -0.6, body: [0, 16.5], tip: 21.5, noseR: 0.55, face: 0.3, hatch: [5.5, Math.PI / 3],
-  holes: [[12.3, 0.7], [17.8, 0.45]], antennas: [], boxes: [[14.6, 1.3, 0.2], [10.2, 1.9, 0.17]], noseSink: [13, 1.2],
-};
-// How wide it is at x along it (its front narrowing to its rounded end)
-export const rocketR = (x) => {
-  const { R, body, tip, noseR } = WRECK_ROCKET, end = tip - noseR;
-  if (x <= body[1]) return R;
-  if (x <= end) return R + (noseR - R) * ((x - body[1]) / (end - body[1]));
-  return Math.sqrt(Math.max(0.1, noseR * noseR - (x - end) ** 2));
+// The ship, whole (meters; x along it, its bow +x; y across; z up): how high its middle is (sunk); its
+// spine [from, to, half its width, half its height]; its cargo pods along both sides of it [where along
+// it], how far out, half their size; the ones torn off [where along it, which side]; the bridge [from, to,
+// half its width, half its height]; the engine block [from, to, half its width, half its height], its
+// nozzles [across]; holes torn in the spine's top [where along it, half how long]
+export const WRECK_SHIP = {
+  zc: 0.2, spine: [-13, 13, 0.9, 0.62],
+  pods: [-11.2, -8, -4.8, -1.6, 1.6, 4.8, 8, 11.2], podAcross: 1.65, podSize: [1.475, 0.65, 0.62], missing: [], // (along all of it, close together: no room to get in between)
+  bridge: [13, 17.6, 1.8, 0.95], engines: [-18, -13, 2.2, 0.8], nozzles: [-1.3, 0, 1.3], holes: [[-8, 0.8], [7.8, 0.7]],
 };
 // Its pieces: the sprite's name; the stretch of it each is (from, to, along it); torn off (open: 1 its
-// front end, -1 its back); where its middle is (meters off WRECK: x east, y south); turned (yaw: its front
-// that way); turned round its length (roll); how high its highest bit stands (top)
+// front end, -1 its back); where its middle is (meters off WRECK: x east, y south); turned (yaw: its bow
+// that way); how high its highest bit stands (top)
 export const WRECK_PIECES = [
-  { name: 'wreck', from: 9, to: 21.6, open: -1, at: [2.8, -7], yaw: 0, roll: 0.06, top: 2 },
-  { name: 'wreck_tail', from: -0.5, to: 9, open: 1, at: [-7, 1.25], yaw: -Math.PI / 2, roll: -0.08, top: 2 },
+  { name: 'wreck', from: 0, to: 17.8, open: -1, at: [9.4, 0], yaw: 0, top: 1.6 },
+  { name: 'wreck_tail', from: -19.4, to: 0, open: 1, at: [-1.1, -16.68], yaw: 2.09, top: 1.4 }, // (bent up off the front half, closed in: nearer a V than a Г)
 ];
-// (not on the map for now: its place, the quest's arrow and mark, its safe zone stay; WRECK_PIECES is
-// still what the art's drawn by)
-export const WRECK_SHOWN = false;
+export const WRECK_SHOWN = false; // (on the map; false: its place, the quest's arrow and mark, its safe zone only)
 const wreckAt = ([x, y]) => modelToWorld({ ...WRECK, yaw: 0 }, [x, y]);
-const WRECK_SOLIDS = []; // (the rocket's own: how near he is to it, to search it: see client.js)
-for (const p of WRECK_SHOWN ? WRECK_PIECES : []) {
-  const { R } = WRECK_ROCKET, mid = (p.from + p.to) / 2;
-  const at = wreckAt(p.at), o = { name: p.name, ...at, yaw: p.yaw, footprint: [(p.to - p.from) / 2, R, 4] }; // (footprint: big, see client.js's drawing order)
-  OBJECTS.push(o);
-  // Solid circles along it, as wide as it is there
-  const n = Math.max(1, Math.round((p.to - p.from - 1) / 1.4));
-  for (let k = 0; k <= n; k++) {
-    const x = p.from + 0.5 + (k / n) * (p.to - p.from - 1);
-    const { zc, tip, noseSink: [s0, deep] } = WRECK_ROCKET;
-    if (zc + rocketR(Math.max(0, x)) - (x > s0 ? (deep * (x - s0)) / (tip - s0) : 0) < 0.15) continue; // (gone under the sand there)
-    const solid = { ...modelToWorld(o, [x - mid, 0]), r: rocketR(Math.max(0, x)) * UNITS_PER_M, cover: true, of: p.name };
-    OBSTACLES.push(solid);
-    WRECK_SOLIDS.push(solid);
-  }
+const WRECK_SOLIDS = []; // (the ship's own: how near he is to it, to search it: see client.js)
+// A solid shape: a rectangle in a thing's own frame (meters: from x0 to x1 along it, y0 to y1 across), as
+// a polygon in the world, its corners going round; end, if given: its x1 side ragged instead (at end(y),
+// no further out than x1), in narrow strips across it (each a convex polygon) behind its straight part
+function solidRect(o, mid, x0, x1, y0, y1, end = null, cover = true) {
+  const at = (x, y) => { const q = modelToWorld(o, [x - mid, y]); return [q.x, q.y]; };
+  const poly = (pts) => ({ poly: pts.map(([x, y]) => at(x, y)), cover, of: o.id ?? o.name });
+  if (!end) return [poly([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])];
+  const n = Math.max(2, Math.ceil((y1 - y0) / 0.15)), ys = Array.from({ length: n + 1 }, (_, k) => y0 + ((y1 - y0) * k) / n);
+  const ends = ys.map((y) => Math.max(x0, Math.min(x1, end(y)))), core = Math.min(...ends);
+  const out = core > x0 ? [poly([[x0, y0], [core, y0], [core, y1], [x0, y1]])] : [];
+  for (let k = 0; k < n; k++) if (ends[k] > core || ends[k + 1] > core) out.push(poly([[core, ys[k]], [ends[k], ys[k]], [ends[k + 1], ys[k + 1]], [core, ys[k + 1]]]));
+  return out;
 }
-// Cargo containers thrown out of it, lying round it outside the square, buried deep, tipped: the kinds by
-// sprite name (paint; turned (yaw); tipped (pitch: its far end down; roll); how high its middle is: sunk);
-// where each lies (meters off WRECK) and which it is. Each stops the hero, and shots; low: never seen through
+// The ragged edge where the ship's broken (as the art has it, at the height he'd walk into it): how far
+// back from the break, across it
+export const wreckJag = (y, z = 0.5) => 0.4 * Math.sin(y * 2.7 + z * 2.3) + 0.2 * Math.sin(y * 8.9 - z * 6.1);
+for (const p of WRECK_SHOWN ? WRECK_PIECES : []) {
+  const { spine, pods, podAcross, podSize, missing, bridge, engines, nozzles } = WRECK_SHIP, mid = (p.from + p.to) / 2;
+  const at = wreckAt(p.at), o = { name: p.name, ...at, yaw: p.yaw, parts: [] }; // (parts: its solid shapes)
+  OBJECTS.push(o);
+  // Each of its parts in this piece, as drawn at its foot: the spine, the pods, the bridge, the engine block,
+  // its nozzles; where it's broken, ragged as the art has it (as far as its edge reaches at any height, its
+  // ribs out past it). Laid out along it with its broken end turned to x1 (flip), then back
+  const brk = p.open > 0 ? p.to : p.from, flip = p.open > 0 ? 1 : -1;
+  const reach = (y) => -(Math.min(...[0.1, 0.4, 0.7, 1, 1.3].map((z) => wreckJag(y, z))) - 0.2); // (out past the break)
+  const add = (x0, x1, y0, y1) => { // (a rectangle of it, ragged if it reaches the break)
+    const [a, b] = flip > 0 ? [x0, x1] : [-x1, -x0], edge = flip * brk;
+    if (a >= edge + 0.7) return; // (all of it torn off)
+    const ragged = b > edge - 1 ? (y) => edge + reach(y) : null;
+    const [c0, c1] = flip > 0 ? [y0, y1] : [-y1, -y0]; // (turned round: across it the other way too)
+    const end = b >= edge - 0.01 ? edge + 1 : b; // (up to the break: as far as its ragged edge may go)
+    for (const s of solidRect({ ...o, yaw: o.yaw + (flip > 0 ? 0 : Math.PI) }, flip * mid, a, end, c0, c1, ragged && ((y) => Math.min(b >= edge - 0.01 ? Infinity : b, ragged(y))))) o.parts.push(s);
+  };
+  add(Math.max(spine[0], p.from), Math.min(spine[1], p.to), -spine[2], spine[2]);
+  for (const px of pods) for (const side of [-1, 1]) {
+    if (missing.some(([mx, ms]) => mx === px && ms === side) || px + podSize[0] < p.from || px - podSize[0] > p.to) continue;
+    add(px - podSize[0], px + podSize[0], side * podAcross - podSize[1], side * podAcross + podSize[1]);
+  }
+  if (bridge[0] >= p.from && bridge[1] <= p.to + 0.5) add(bridge[0], bridge[1] - 0.4, -bridge[2], bridge[2]); // (its sloped front, sand drifted up it: in from its foot)
+  if (engines[0] >= p.from - 1.5 && engines[1] <= p.to) {
+    add(engines[0], engines[1], -engines[2], engines[2]);
+    add(engines[0] - 0.9, engines[0], Math.min(...nozzles) - 0.62, Math.max(...nozzles) + 0.62); // (the nozzles: their ends under the sand drifted behind them)
+  }
+  OBSTACLES.push(...o.parts);
+  WRECK_SOLIDS.push(...o.parts);
+}
+// Cargo containers, buried deep, tipped: the kinds by sprite name (paint; turned (yaw); tipped (pitch: its
+// far end down; roll); how high its middle is: sunk); where each lies (meters off WRECK) and which it
+// is. Each stops the hero, and shots; low: never seen through
 export const CONTAINER_KINDS = {
   container_orange: { paint: 'orange', yaw: 0.45, pitch: 0.22, roll: 0.05, zc: 0.15 },
   container_white: { paint: 'white', yaw: -0.35, pitch: -0.08, roll: 0.18, zc: 0.05 },
   container_teal: { paint: 'teal', yaw: 1.2, pitch: 0.12, roll: -0.12, zc: 0.1 },
 };
-const CONTAINERS = [[13, -8, 'container_orange'], [-10.5, 9.5, 'container_white'], [7.5, 8.5, 'container_teal'], [-12.5, -1.5, 'container_orange'], [12, 3, 'container_white']];
+const CONTAINERS = [];
+// End to end along the gap between the ship's halves (from the one's nearest edge to the other's), each a
+// little askew, as if they came down there, half a meter or so apart and off the ship: no way through there
+// (their solid circles reach a little past their ends, closing the gaps between them)
+if (WRECK_SHOWN) {
+  const [front, tail] = WRECK_PIECES.map((p) => OBJECTS.find((o) => o.name === p.name));
+  let best = null; // (the nearest two points of theirs: a corner of one and the nearest point to it of the other)
+  for (const [one, other, sign] of [[tail, front, 1], [front, tail, -1]]) for (const s of one.parts) for (const [x, y] of s.poly) for (const t of other.parts) {
+    const q = nearestOn(t, x, y), gap = Math.hypot(q.x - x, q.y - y);
+    if (!best || gap < best.gap) best = sign > 0 ? { gap, from: { x, y }, to: q } : { gap, from: q, to: { x, y } };
+  }
+  const ux = (best.to.x - best.from.x) / best.gap, uy = (best.to.y - best.from.y) / best.gap;
+  const { from } = best, L = best.gap / UNITS_PER_M; // (the tail's edge; meters across to the front's)
+  const n = Math.max(1, Math.round((L - 0.5) / 3.5)), space = (L - n * 3) / (n + 1); // (as many as fit, the room left shared out round them)
+  const paints = ['orange', 'teal', 'white', 'red'], lie = [[0.12, 0.25, 0.06, 0.04], [-0.1, -0.25, -0.05, 0.08], [0.08, 0.2, 0.08, -0.05]]; // [turn, off the line (meters), pitch, roll]
+  for (let i = 0; i < n; i++) {
+    const [turn, off, pitch, roll] = lie[i % lie.length], t = (space + 1.5 + i * (3 + space)) * UNITS_PER_M, kind = `container_gate_${i}`;
+    CONTAINER_KINDS[kind] = { paint: paints[i % paints.length], yaw: Math.atan2(uy, ux) + turn, pitch, roll, zc: 0.12, reach: 0.35 };
+    CONTAINERS.push([(from.x + ux * t - uy * off * UNITS_PER_M - WRECK.x) / UNITS_PER_M, (from.y + uy * t + ux * off * UNITS_PER_M - WRECK.y) / UNITS_PER_M, kind]);
+  }
+}
 CONTAINERS.forEach(([mx, my, kind], i) => {
-  const name = `container_${i}`, o = { name, sprite: kind, ...wreckAt([mx, my]), yaw: CONTAINER_KINDS[kind].yaw };
+  const name = `container_${i}`, o = { name, sprite: kind, ...wreckAt([mx, my]), yaw: CONTAINER_KINDS[kind].yaw, parts: [] };
   OBJECTS.push(o);
-  for (const m of [-1, 0, 1]) OBSTACLES.push({ ...modelToWorld(o, [m, 0]), r: 0.7 * UNITS_PER_M, cover: true, of: name });
+  const long = 1.5 + (CONTAINER_KINDS[kind].reach ?? 0); // (along it from its middle: a gate's out past its ends, closing the gaps between them)
+  o.parts.push(...solidRect(o, 0, -long, long, -0.6, 0.6));
+  OBSTACLES.push(...o.parts);
 });
-if (WRECK_SHOWN) Object.assign(OBJECTS.find((o) => o.name === 'wreck'), { label: WRECK.label, say: 'Nothing but scrap in here... Wait, what’s that noise?', solids: WRECK_SOLIDS }); // (say: his line as he's done searching it, see client.js)
-// Where the Mother comes out: in the middle of the square (its point on the ball, as WRECK's)
-export const MOTHER_AT = wreckAt([1.5, 1]);
-MOTHER_AT.home = toSphere(CHART0, MOTHER_AT.x - SPAWN.x, MOTHER_AT.y - SPAWN.y, PLANET_R);
+if (WRECK_SHOWN) Object.assign(OBJECTS.find((o) => o.name === 'wreck'), { label: WRECK.label, say: 'Nothing but scrap in here...', solids: WRECK_SOLIDS });
 export const EGG_R = 1.15; // meters: how wide it is, round its middle (the art draws it so)
 const EGG_SOLID = { x: HUGE_THING.x, y: HUGE_THING.y, r: (EGG_R + 0.1) * UNITS_PER_M, cover: true, of: 'egg' };
 OBJECTS.push({ name: 'egg', x: HUGE_THING.x, y: HUGE_THING.y, label: 'Huge thing', solid: EGG_SOLID, breathes: true, quest: 'hugeThing', say: 'I won’t fight the urge to destroy this abomination!', sayOff: 'Ew, it’s huge... Looks disgusting!' }); // (sayOff: his line while its quest, quest, isn't on; say, on it: it wakes, see client.js)
@@ -421,7 +462,7 @@ const FISSURES_EACH = 14; // (cracks in each sector)
 // { flock (which it's with), home (its point on the ball), dir (which way it faces) }
 export const RAVENS = [];
 const RAVEN_FLOCKS = 8; // (ravens in each sector, each on its own) // (meters from anything already there)
-const STREWN_AWAY = [[STRUCTURES, 22], [WRECK, 18], [HUGE_THING, 12], [EQUIPMENT, 8], [OBJECTS.find((o) => o.name === 'pod'), 14]]; // (and from these, meters)
+const STREWN_AWAY = [[STRUCTURES, 22], [WRECK, 30], [HUGE_THING, 12], [EQUIPMENT, 8], [OBJECTS.find((o) => o.name === 'pod'), 14]]; // (and from these, meters)
 {
   const taken = OBJECTS.filter((o) => !o.later).map((o) => ({ x: o.x, y: o.y }));
   const strew = (KINDS, each, seed) => {
@@ -482,7 +523,7 @@ export const SAFE_ZONES = [
   { at: STRUCTURES, r: 10 * UNITS_PER_M },
   { at: OBJECTS.find((o) => o.name === 'egg'), r: 10 * UNITS_PER_M, until: 'egg' },
   { at: EQUIPMENT, r: 8 * UNITS_PER_M, until: 'equipment' },
-  { at: WRECK, r: 16 * UNITS_PER_M }, // (big: the whole wreck and well round it)
+  { at: WRECK, r: 26 * UNITS_PER_M }, // (big: the whole wreck and well round it)
 ];
 
 // Their places on the planet: each object at a point of the ball (home); each solid circle at an
@@ -490,6 +531,10 @@ export const SAFE_ZONES = [
 for (const o of OBJECTS) o.home = toSphere(CHART0, o.x - SPAWN.x, o.y - SPAWN.y, PLANET_R);
 for (const ob of OBSTACLES) {
   const parent = OBJECTS.find((o) => (o.id ?? o.name) === ob.of);
+  if (ob.poly) { // (a polygon: its corners each off its object; its middle and how far out it reaches, to pass it by quickly)
+    ob.offs = ob.poly.map(([x, y]) => [x - parent.x, y - parent.y]);
+    shapeOf(ob);
+  }
   ob.dx = ob.x - parent.x;
   ob.dy = ob.y - parent.y;
 }
@@ -502,10 +547,11 @@ function chartPoint(chart, home) {
 
 // Puts the objects (and the structures' place) and the solid circles on the chart (where they are on it now)
 export function placeOnChart(chart) {
-  for (const o of [...OBJECTS, STRUCTURES, HUGE_THING, EQUIPMENT, WRECK, MOTHER_AT]) Object.assign(o, chartPoint(chart, o.home));
+  for (const o of [...OBJECTS, STRUCTURES, HUGE_THING, EQUIPMENT, WRECK]) Object.assign(o, chartPoint(chart, o.home));
   for (const ob of OBSTACLES) {
     const parent = OBJECTS.find((o) => (o.id ?? o.name) === ob.of);
     if (!parent) continue; // added later, on no object (a crater's): the client carries it
+    if (ob.offs) { ob.poly = ob.offs.map(([x, y]) => [parent.x + x, parent.y + y]); shapeOf(ob); continue; }
     ob.x = parent.x + ob.dx;
     ob.y = parent.y + ob.dy;
   }
@@ -527,6 +573,20 @@ export function rayHit(x, y, dx, dy, max) {
   let best = max;
   for (const o of OBSTACLES) {
     if (!o.cover) continue;
+    if (o.poly) { // a polygon: where the ray goes into it (clipped against each of its sides)
+      let t0 = 0, t1 = best, turn = 0;
+      for (let i = 0; i < o.poly.length && t0 <= t1; i++) {
+        const [ax, ay] = o.poly[i], [bx, by] = o.poly[(i + 1) % o.poly.length];
+        if (!turn) turn = Math.sign((bx - ax) * (o.y - ay) - (by - ay) * (o.x - ax)) || 1; // (which way round it goes)
+        const nx = turn * (by - ay), ny = turn * -(bx - ax); // (out of its side)
+        const den = nx * dx + ny * dy, num = nx * (ax - x) + ny * (ay - y);
+        if (den === 0) { if (num < 0) t0 = Infinity; continue; }
+        const t = num / den;
+        if (den < 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+      }
+      if (t0 <= t1 && t0 > 0 && t0 < best) best = t0;
+      continue;
+    }
     const ox = o.x - x, oy = o.y - y, along = ox * dx + oy * dy;
     const off2 = ox * ox + oy * oy - along * along, r2 = o.r * o.r;
     if (off2 > r2) continue; // the ray passes it by
@@ -554,8 +614,18 @@ export function move(p, dx, dy, dt, speed = SPEED, r = PLAYER_SIZE / 2) { // (r:
   if (len === 0) return;
   if (len > 1) { dx /= len; dy /= len; }
   let nx = p.x + dx * speed * dt, ny = p.y + dy * speed * dt;
-  for (let pass = 0; pass < 2; pass++) // twice: pushed out of one circle into the next (the bed's row)
+  for (let pass = 0; pass < 3; pass++) // (again: pushed out of one into the next, the bed's row, a corner between two)
     for (const o of OBSTACLES) {
+      if (o.poly) { // a polygon: out of it along its nearest side, to r off it (sliding along it)
+        if (Math.abs(nx - o.x) > o.reach + r || Math.abs(ny - o.y) > o.reach + r) continue;
+        const q = nearestOn(o, nx, ny), ox = nx - q.x, oy = ny - q.y, d = Math.hypot(ox, oy);
+        if (!q.inside && d >= r) continue;
+        if (d < 1e-6) continue;
+        const k = q.inside ? -1 : 1; // (inside: back out the way it came in)
+        nx = q.x + ((k * ox) / d) * r;
+        ny = q.y + ((k * oy) / d) * r;
+        continue;
+      }
       const ox = nx - o.x, oy = ny - o.y, d = Math.hypot(ox, oy), min = o.r + r;
       if (d >= min) continue;
       if (d < 1e-6) return; // right on its center: nowhere to slide
@@ -565,6 +635,35 @@ export function move(p, dx, dy, dt, speed = SPEED, r = PLAYER_SIZE / 2) { // (r:
   p.x = nx;
   p.y = ny;
 }
+
+// A polygon obstacle's middle and how far its corners reach from it (to pass it by quickly)
+function shapeOf(ob) {
+  ob.x = ob.poly.reduce((n, [x]) => n + x, 0) / ob.poly.length;
+  ob.y = ob.poly.reduce((n, [, y]) => n + y, 0) / ob.poly.length;
+  ob.reach = Math.max(...ob.poly.map(([x, y]) => Math.hypot(x - ob.x, y - ob.y)));
+}
+// The nearest point to (x, y) on a polygon obstacle's edge, and whether (x, y) is inside it
+export function nearestOn(ob, x, y) {
+  let best = null, inside = true;
+  const P = ob.poly, n = P.length;
+  let turn = 0;
+  for (let i = 0; i < n; i++) {
+    const [ax, ay] = P[i], [bx, by] = P[(i + 1) % n], ex = bx - ax, ey = by - ay;
+    const side = ex * (y - ay) - ey * (x - ax);
+    if (turn === 0) turn = Math.sign(side) || 0; else if (side && Math.sign(side) !== turn) inside = false;
+    const k = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey))), qx = ax + ex * k, qy = ay + ey * k, d = Math.hypot(x - qx, y - qy);
+    if (!best || d < best.d) best = { x: qx, y: qy, d };
+  }
+  return { x: best.x, y: best.y, inside };
+}
+// How far (x, y) is from a solid thing's edge (circle or polygon; below 0: inside it)
+export function gapTo(ob, x, y) {
+  if (!ob.poly) return Math.hypot(x - ob.x, y - ob.y) - ob.r;
+  const q = nearestOn(ob, x, y), d = Math.hypot(x - q.x, y - q.y);
+  return q.inside ? -d : d;
+}
+// (x, y), r round it, is in some solid thing
+export const solidAt = (x, y, r = 0) => OBSTACLES.some((o) => (o.poly ? Math.abs(x - o.x) < o.reach + r && Math.abs(y - o.y) < o.reach + r : true) && gapTo(o, x, y) < r);
 
 // Rolls: start one with startRoll (if the player can), then call updateRoll every frame instead of
 // move until it returns false. p.roll = { t, dx, dy } while rolling; p.rollCooldown counts down after.

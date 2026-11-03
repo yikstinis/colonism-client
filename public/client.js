@@ -1,5 +1,5 @@
 import {
-  SPAWN, OBJECTS, REACH, ROLL_TIME, ROLL_COOLDOWN, UNITS_PER_M, VISION, GAIT_SPEED, CHART0, PLANET, SYSTEM, PLANET_R, POLE, STRIKE_SLANT, STRIKE_WAY, BAG_HITS, STRUCTURES, HUGE_THING, EQUIPMENT, WRECK, MOTHER_AT, SAFE_ZONES, RAVENS, modelToWorld, TURRET_FRAMES, TURRET_RANGE, TURRET_MUZZLE, recenter, move, dirFromVector, dirVector, gait, rayHit, addObstacle, removeObstacle, startRoll, updateRoll, CROUCH_SPEED, CROUCH_AIM, CROUCH_CYCLE, AIM_OUT_TIME, AIM_OFFSETS, FIRE_ROUNDS, RELOAD_TIME, GAIT_CYCLE, SHOT_RANGE, SHOT_SPREAD, shotSway, PICK_TIME, PICK_GRAB, SLASH_TIME, SLASH_COOLDOWN, SLASH_RANGE, SLASH_ARC, BUG_BITE_TIME, BUG_BITE_SNAP,
+  SPAWN, OBJECTS, REACH, ROLL_TIME, ROLL_COOLDOWN, UNITS_PER_M, VISION, GAIT_SPEED, CHART0, PLANET, SYSTEM, PLANET_R, POLE, STRIKE_SLANT, STRIKE_WAY, BAG_HITS, STRUCTURES, HUGE_THING, EQUIPMENT, WRECK, SAFE_ZONES, RAVENS, modelToWorld, solidAt, gapTo, TURRET_FRAMES, TURRET_RANGE, TURRET_MUZZLE, recenter, move, dirFromVector, dirVector, gait, rayHit, addObstacle, removeObstacle, startRoll, updateRoll, CROUCH_SPEED, CROUCH_AIM, CROUCH_CYCLE, AIM_OUT_TIME, AIM_OFFSETS, FIRE_ROUNDS, RELOAD_TIME, GAIT_CYCLE, SHOT_RANGE, SHOT_SPREAD, shotSway, PICK_TIME, PICK_GRAB, SLASH_TIME, SLASH_COOLDOWN, SLASH_RANGE, SLASH_ARC, BUG_BITE_TIME, BUG_BITE_SNAP,
 } from '/shared/world.js';
 import { cellPoint } from '/shared/grid.js';
 import { ZOOM, HEIGHT_PX, toScreenX, toScreenY } from '/render/view.js';
@@ -117,8 +117,8 @@ const fellowSpeech = createSpeech(ctx, voices); // what the fellow says, over hi
 // The thing in reach that E does something with: hold to pick it up, or press to have the hero say his line
 // (not the fellow while he's answering what he's asked: from the asking till his answer's faded, not to be cut off)
 const reachable = () => objects.find((o) => (o.pickup || o.say) && !(o.name === 'fellow' && fellowBusy()) && reachOf(o) <= REACH);
-// How far he is from a thing's edge (a big one's, as the wreck: its nearest solid circle's)
-const reachOf = (o) => (o.solids ? Math.min(...o.solids.map((c) => Math.hypot(me.x - c.x, me.y - c.y) - c.r)) : Math.hypot(me.x - o.x, me.y - o.y) - (o.solid?.r ?? 0));
+// How far he is from a thing's edge (a big one's, as the wreck: its nearest solid shape's)
+const reachOf = (o) => (o.solids ? Math.min(...o.solids.map((c) => gapTo(c, me.x, me.y))) : Math.hypot(me.x - o.x, me.y - o.y) - (o.solid?.r ?? 0));
 
 // What the quest leads to, as shown (its name in gold, the arrow to it): none while the backpack's cue
 // is waiting for him to open it (the next quest's things stay white till he has)
@@ -908,6 +908,7 @@ let bugTimer = rand(...BUG_EVERY);
 // crate's (the well in it too) once it's picked up
 const SAFE_ENDS = { map: () => mapCue.phase === 'pressed' || mapCue.phase === 'done', egg: () => eggKilled, equipment: () => hasEquipment };
 const safeZones = SAFE_ZONES.map((z) => ({ o: z.at, r: z.r, gone: SAFE_ENDS[z.until] ?? (() => false) }));
+const SHOW_SAFE = true; // (for now: the safe zones drawn on the sand, to see where they are)
 const inSafe = (x, y, pad = 0) => safeZones.some((z) => !z.gone() && Math.hypot(x - z.o.x, y - z.o.y) < z.r + pad);
 
 // A pack of n, out of sight round him on one side, each clear of solid things and the safe zones
@@ -923,7 +924,7 @@ function spawnPack(n) {
 // One at (x, y), facing him, to come for him
 const addBug = (x, y) => bugs.push({ x, y, dir: dirFromVector(me.x - x, me.y - y), life: BUG_LIFE, moving: false, animOffset: rand(0, 1000), weave: rand(0, Math.PI * 2), dash: -rand(0, BUG_DASH.every), age: 0, legs: 0 }); // (age: seconds it's been coming; legs: its walk's clock, ms)
 // (x, y) is in some solid thing's circle (with a bug's room round it)
-const inSolid = (x, y) => objects.some((o) => o.solid && Math.hypot(o.solid.x - x, o.solid.y - y) < o.solid.r + BUG_R) || craters.some((c) => Math.hypot(c.x - x, c.y - y) < c.solid.r + BUG_R);
+const inSolid = (x, y) => solidAt(x, y, BUG_R);
 
 // Guards: on the way for the fellow's crate (asked, not picked up yet), GUARDS of them wait round it and the
 // well by it, apart from the packs (not counted in BUG_MAX); put there once he's within GUARD_PUT of the
@@ -962,23 +963,22 @@ function updateBugs(dt) {
     speech.say(GUARDS_LINE);
   }
   if (bugs.some((b) => b.waiting && Math.hypot(b.x - me.x, b.y - me.y) < GUARD_WAKE)) wakeGuards();
-  if (!inSafe(me.x, me.y) && !motherAlive() && (bugTimer -= dt) <= 0) { // (none while she's up: her brood's enough)
+  if (!inSafe(me.x, me.y) && (bugTimer -= dt) <= 0) {
     bugTimer = rand(...BUG_EVERY);
-    const alive = bugs.filter((b) => !b.guard && !b.mother).length;
+    const alive = bugs.filter((b) => !b.guard).length;
     if (alive < BUG_MAX) spawnPack(Math.min(BUG_MAX - alive, Math.round(rand(...BUG_PACK))));
   }
   for (let i = bugs.length - 1; i >= 0; i--) {
     const b = bugs[i], dx = me.x - b.x, dy = me.y - b.y, d = Math.hypot(dx, dy);
     if (b.waiting) { b.moving = false; continue; } // (a guard, still where it was put: never dropped)
-    if (d > BUG_GONE && !b.mother) { bugs.splice(i, 1); continue; }
-    if (!b.mother) b.age += dt;
-    if (b.mother) birth(b, dt);
-    b.moving = d > (b.mother ? MOTHER_NEAR : BUG_NEAR) && dt > 0;
+    if (d > BUG_GONE) { bugs.splice(i, 1); continue; }
+    b.age += dt;
+    b.moving = d > BUG_NEAR && dt > 0;
     if (b.attack !== undefined && (b.attack += dt) >= BUG_BITE_TIME) b.attack = undefined; // (its bite played out)
-    if (d > (b.mother ? MOTHER_REACH : BUG_REACH)) b.bite = undefined; // (got away from it: the next time it's close it waits a moment again)
+    if (d > BUG_REACH) b.bite = undefined; // (got away from it: the next time it's close it waits a moment again)
     else if (dt > 0 && (b.bite = (b.bite ?? (b.moving ? BUG_BITE.running : BUG_BITE.first)) - dt) <= 0) { // close: it bites
-      b.bite = b.mother ? MOTHER_BITE.every : BUG_BITE.every;
-      if (!me.roll) bitten(Math.atan2(-dy, -dx), b.mother ? MOTHER_BITE.hurts : 1);
+      b.bite = BUG_BITE.every;
+      if (!me.roll) bitten(Math.atan2(-dy, -dx), 1);
     }
     // Its bite's animation starts that much before the bite, for the snap to come as it lands
     if (b.bite !== undefined && b.attack === undefined && b.bite <= BUG_BITE_TIME * BUG_BITE_SNAP && b.bite > 0) b.attack = BUG_BITE_TIME * BUG_BITE_SNAP - b.bite;
@@ -986,16 +986,13 @@ function updateBugs(dt) {
     if (!b.moving) { b.dir = dirFromVector(dx, dy); continue; }
     // Close enough, and not too soon after the last: a dash at him, straight; else on its way, weaving
     b.dash -= dt;
-    if (!b.mother && d < BUG_LUNGE && b.dash < -BUG_DASH.every) b.dash = BUG_DASH.time; // (she doesn't: she crawls straight at him)
+    if (d < BUG_LUNGE && b.dash < -BUG_DASH.every) b.dash = BUG_DASH.time;
     const dashing = b.dash > 0;
     b.weave += dt * 7;
-    const a = Math.atan2(dy, dx) + (dashing || b.mother ? 0 : BUG_WEAVE * Math.sin(b.weave) * Math.min(1, d / BUG_LUNGE)), mx = Math.cos(a), my = Math.sin(a);
+    const a = Math.atan2(dy, dx) + (dashing ? 0 : BUG_WEAVE * Math.sin(b.weave) * Math.min(1, d / BUG_LUNGE)), mx = Math.cos(a), my = Math.sin(a);
     if (b.attack === undefined) b.dir = dirFromVector(mx, my); // (biting, it stays turned to him)
-    if (b.mother) move(b, mx, my, dt, MOTHER_SPEED, MOTHER_R * 0.8);
-    else {
-      move(b, mx, my, dt, bugSpeed(b) * (dashing ? BUG_DASH.speed : 1));
-      b.legs += dt * 1000 * BUG_STRIDE * (bugSpeed(b) / BUG_SPEED); // (its legs as quick as it goes)
-    }
+    move(b, mx, my, dt, bugSpeed(b) * (dashing ? BUG_DASH.speed : 1));
+    b.legs += dt * 1000 * BUG_STRIDE * (bugSpeed(b) / BUG_SPEED); // (its legs as quick as it goes)
   }
 }
 
@@ -1036,61 +1033,6 @@ function updateRavens(dt) {
     if (Math.hypot(r.x - me.x, r.y - me.y) > RAVEN_GONE) ravens.splice(i, 1); // (flown off: gone)
   }
 }
-
-// ---------- The Mother: the bugs' queen. Searching the wreck (E held on it, its quest on) brings her out
-// in the middle of her ground (the square the ship's two halves make, see shared/world.js): one of
-// the bugs, but huge, MOTHER_LIFE to her, slow, crawling straight at him (never left behind, never knocked
-// back), biting MOTHER_BITE.hurts at a time; every MOTHER_BROOD.every seconds MOTHER_BROOD.n of her brood
-// out of her back end. Killed, she bursts, MOTHER_XP for him ----------
-
-const wreck = OBJECTS.find((o) => o.name === 'wreck'); // (none for now: not on the map, see WRECK_SHOWN; nor she, then)
-const MOTHER_LIFE = 60, MOTHER_R = 1.4 * UNITS_PER_M, MOTHER_SPEED = BUG_SPEED * 0.45; // (her body's circle: hit by rounds and the knife)
-const MOTHER_NEAR = 2.0 * UNITS_PER_M, MOTHER_REACH = 2.8 * UNITS_PER_M; // she stops this close (from her middle); bites this close
-const MOTHER_BITE = { every: 1.6, hurts: 3 }, MOTHER_BROOD = { every: 5, n: 2 }, MOTHER_XP = 15;
-const MOTHER_LIFE_UP = 95; // px: her life's rows over her feet
-const MOTHER_SEEN_LINE = 'So that’s where they all come from!';
-let motherUp = false, motherKilled = false, motherSeen = false;
-const motherAlive = () => motherUp && !motherKilled;
-
-function wakeMother() {
-  motherUp = true;
-  wreck.say = null; // (searched: nothing more to do with it)
-  bugs.push({ x: MOTHER_AT.x, y: MOTHER_AT.y, dir: dirFromVector(me.x - MOTHER_AT.x, me.y - MOTHER_AT.y), life: MOTHER_LIFE, most: MOTHER_LIFE, mother: true,
-    moving: false, animOffset: 0, weave: 0, dash: -1, brood: MOTHER_BROOD.every });
-}
-// Her brood, every so often: out of her back end, coming for him
-function birth(m, dt) {
-  if (!motherSeen && Math.hypot(m.x - me.x, m.y - me.y) < VISION) { // (the first sight of her: his line)
-    motherSeen = true;
-    speech.say(MOTHER_SEEN_LINE);
-  }
-  if (dt <= 0 || (m.brood -= dt) > 0) return;
-  m.brood = MOTHER_BROOD.every;
-  const back = dirVector(m.dir);
-  for (let i = 0, tries = 0; i < MOTHER_BROOD.n && tries < 12; tries++) {
-    const a = Math.atan2(-back.dy, -back.dx) + rand(-0.8, 0.8), d = MOTHER_R + rand(0.4, 1) * UNITS_PER_M, x = m.x + Math.cos(a) * d, y = m.y + Math.sin(a) * d;
-    if (inSolid(x, y)) continue;
-    addBug(x, y);
-    i++;
-  }
-}
-// Her death: on top of a bug's (see hurtBug), she bursts, her sac's slime and eggs and meat flung all round
-function motherDies(m, a) {
-  motherKilled = true;
-  for (let w = 0; w < 3; w++) setTimeout(() => {
-    for (let i = 0; i < 160; i++) {
-      const v = rand(15, 120), c = a + (Math.random() < 0.4 ? rand(-1, 1) : rand(-Math.PI, Math.PI)), r = rand(0, 1) * MOTHER_R;
-      particles.push({
-        kind: 'clod', x: m.x + Math.cos(c) * r, y: m.y + Math.sin(c) * r * 0.6, h: rand(0.2, 1.5), vx: Math.cos(c) * v, vy: Math.sin(c) * v,
-        vh: rand(1, 5), age: 0, life: rand(10, 14), color: MOTHER_CHUNKS[i % MOTHER_CHUNKS.length], size: i < 10 ? 6 : i < 40 ? 4 : Math.random() < 0.5 ? 3 : 2,
-      });
-    }
-    sounds.splatter(Math.max(-1, Math.min(1, (m.x - me.x) / VISION)), true, SQUEAL_SHOT_LOUD);
-  }, w * 300);
-  reeks.push({ x: m.x, y: m.y, t: 8 });
-  gainXp(MOTHER_XP);
-}
-const MOTHER_CHUNKS = ['#d6ae93', '#a3775d', '#771d4a', '#ece07c', '#bba93f', ...MEAT, ...ICHOR]; // her sac, its veins, her eggs, her meat and insides
 
 // Experience for him: on to the next level each time there's enough, a talent point with each (none
 // at the last: the bar stays full)
@@ -1133,7 +1075,7 @@ function bugsInCone() {
   const aim = aimAngle(), spread = shotSpread(), range = shotRange();
   return bugs.filter((b) => {
     const dx = b.x - me.x, dy = b.y - me.y, d = Math.hypot(dx, dy), off = Math.atan2(dy, dx) - aim;
-    const r = b.mother ? MOTHER_R : BUG_R;
+    const r = BUG_R;
     if (d < r) return true; // (on top of him)
     if (d - r > range || Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) > spread + Math.atan2(r, d)) return false;
     return rayHit(me.x, me.y, dx / d, dy / d, d) >= d - r;
@@ -1195,10 +1137,8 @@ function updateTurret(dt) {
 function hurtBug(b, n, a, shot = false) {
   if (b.waiting) wakeGuards(); // (a guard hit: they all come)
   b.life -= n;
-  if (!b.mother) { // (she's too big to be knocked back)
-    b.x += Math.cos(a) * 4;
-    b.y += Math.sin(a) * 4;
-  }
+  b.x += Math.cos(a) * 4;
+  b.y += Math.sin(a) * 4;
   const dead = b.life <= 0;
   for (let i = 0; i < (dead ? 50 : 8); i++) { // blood: on its death a burst all round, the hit's way most
     const v = rand(10, dead ? 110 : 50), c = a + (dead ? (Math.random() < 0.6 ? rand(-0.9, 0.9) : rand(-Math.PI, Math.PI)) : rand(-1, 1));
@@ -1208,7 +1148,6 @@ function hurtBug(b, n, a, shot = false) {
     });
   }
   if (!dead) return;
-  if (b.mother) motherDies(b, a);
   gainXp(1);
   for (let i = 0; i < 18; i++) { // its green insides, splashing out with the blood
     const v = rand(10, 80), c = a + rand(-1.6, 1.6);
@@ -1650,8 +1589,7 @@ function step(real) {
   // The egg, its quest on, is woken so too: E held on it (no squat: he stands up to it)
   const near = me.pick ? null : reachable();
   const waking = near?.name === 'egg' && questOn(near); // (its say gone once it's woken: out of reach then)
-  const searching = near?.name === 'wreck' && quests.target() === 'wreck' && !motherUp; // (searching the wreck: she comes; its say gone then)
-  const holding = (!!near?.pickup || waking || searching) && keys.has('KeyE') && !me.roll && !waitRelease;
+  const holding = (!!near?.pickup || waking) && keys.has('KeyE') && !me.roll && !waitRelease;
   held = holding ? held + dt : Math.max(0, held - 2 * dt);
   me.squat = me.pick || waking ? 0 : held / HOLD_TIME;
   // A click slashes with the knife in front (armed only), standing or on the move. The gait's clock
@@ -1670,7 +1608,7 @@ function step(real) {
   if (me.slash && (me.slash.t += dt) >= SLASH_TIME) me.slash = null;
   if (me.slash && !me.slash.done && me.slash.t >= SLASH_TIME * SLASH_CUT) { // the cut: whatever it reaches is hit, once
     me.slash.done = true;
-    const intoBag = bagInReach(), intoEgg = eggLife && eggInReach(), cutBugs = bugs.filter((b) => inSlash(b.x, b.y, b.mother ? MOTHER_R : BUG_R)); // (a copy: the dead drop out of bugs)
+    const intoBag = bagInReach(), intoEgg = eggLife && eggInReach(), cutBugs = bugs.filter((b) => inSlash(b.x, b.y, BUG_R)); // (a copy: the dead drop out of bugs)
     if (intoBag) hitBag();
     if (intoEgg) { // (cut where its side's nearest him)
       const a = Math.atan2(egg.y - me.y, egg.x - me.x);
@@ -1753,7 +1691,7 @@ function step(real) {
       }
     } else me.stride = 0.7;
   }
-  if (near && usePressed && !me.roll && !drilling && !waking && !searching) { // starting to use something: whatever the hero was saying is cut off
+  if (near && usePressed && !me.roll && !drilling && !waking) { // starting to use something: whatever the hero was saying is cut off
     speech.hush();
     if (near.say && !near.speaks) speech.say(near.sayOff && !questOn(near) ? near.sayOff : near.say); // (a thing's line is the hero's; one that speaks says its own; sayOff, off its quest)
     if (near.heals && me.hp < maxHp) { // (warming himself by it: health back, all of it)
@@ -1785,11 +1723,10 @@ function step(real) {
   if (near?.name !== 'fellow') fellowAsk = false; // (walked off: no more to ask)
   if (holding && held >= HOLD_TIME) {
     sounds.done(); // (the key's click the other way round: it's full)
-    if (waking || searching) {
+    if (waking) {
       speech.hush();
       speech.say(near.say);
-      if (waking) wakeEgg();
-      else wakeMother();
+      wakeEgg();
     } else pickUp(near);
     held = 0;
     waitRelease = true;
@@ -1823,7 +1760,7 @@ function step(real) {
       side += k * Math.max(-1, Math.min(1, (b.x - me.x) / VISION));
     }
     sounds.bugs(Math.min(1, near), near ? side / near : 0, dt);
-    sounds.music(!inSafe(me.x, me.y) || motherAlive(), Math.min(1, near)); // (the music out of the safe zones only, its heartbeat quicker with bugs near)
+    sounds.music(!inSafe(me.x, me.y), Math.min(1, near)); // (the music out of the safe zones only, its heartbeat quicker with bugs near)
   }
   sounds.pulse(me.hp > 0 && me.hp < maxHp * LOW_HP ? 1 - me.hp / (maxHp * LOW_HP) : null); // (his heart, his health low)
   sounds.fire(Math.min(1, fireSources.reduce((n, f) => n + Math.max(0, 1 - Math.hypot(f.x - me.x, f.y - me.y) / VISION) ** 2, 0)), dt);
@@ -1935,7 +1872,7 @@ const wellObj = OBJECTS.find((o) => o.name === 'well'), WELL_FOUND = 2.5 * UNITS
 function saveCheckpoint() {
   checkpointReached = true;
   try {
-    localStorage.setItem(CHECKPOINT, JSON.stringify({ level, xp, points, talents: talents.taken(), stats: character.stats, medkits, equipment: hasEquipment, equipmentReturned, fellowThreatened, motherKilled, wellSeen, quests: quests.save() }));
+    localStorage.setItem(CHECKPOINT, JSON.stringify({ level, xp, points, talents: talents.taken(), stats: character.stats, medkits, equipment: hasEquipment, equipmentReturned, fellowThreatened, wellSeen, quests: quests.save() }));
   } catch { /* (no storage: nothing kept) */ }
 }
 function loadCheckpoint() {
@@ -1957,8 +1894,6 @@ function loadCheckpoint() {
   hasEquipment = !!saved.equipment; // (picked up before: its crate gone)
   equipmentReturned = !!saved.equipmentReturned; // (and handed back to the fellow)
   fellowThreatened = !!saved.fellowThreatened; // (and told what's coming to him)
-  motherKilled = motherUp = !!saved.motherKilled; // (the Mother killed: the wreck searched)
-  if (motherKilled && wreck) wreck.say = null;
   wellSeen = !!saved.wellSeen;
   // All that came before it, done: the backpack on, the gun counted out, the bottles and the bag gone,
   // every cue past
@@ -1987,6 +1922,12 @@ function loadCheckpoint() {
   me.y = STRUCTURES.y + 1.6 * UNITS_PER_M;
 }
 loadCheckpoint();
+// (for now: he starts by the ship's wreck, south of it, wherever he'd have started)
+const START_AT_WRECK = false;
+if (START_AT_WRECK) {
+  me.x = WRECK.x + 8 * UNITS_PER_M;
+  me.y = WRECK.y + 6 * UNITS_PER_M;
+}
 requestAnimationFrame(frame);
 
 // ---------- Rendering ----------
@@ -2018,7 +1959,7 @@ function updateDebug() {
     row('medkits', `${medkits} / ${MEDKITS}`),
     row('ammo', ammo ? `${ammo.mag} / ${MAG}${ammo.reload !== null ? `, reloading ${show(ammo.reload)} / ${show(reloadTime())} s` : ''}` : '—'),
     '', `BUGS ${bugs.length}`,
-    ...bugs.slice(0, DEBUG_BUGS).map((b) => `${show(Math.hypot(b.x - me.x, b.y - me.y) / UNITS_PER_M).padStart(6)} m  life ${show(b.life)}  ${b.moving ? 'moving' : 'still'}  dash ${show(b.dash)}  bite ${show(b.bite)}${b.mother ? '' : `  speed ${Math.round((bugSpeed(b) / GAIT_SPEED.run) * 100)}%`}`),
+    ...bugs.slice(0, DEBUG_BUGS).map((b) => `${show(Math.hypot(b.x - me.x, b.y - me.y) / UNITS_PER_M).padStart(6)} m  life ${show(b.life)}  ${b.moving ? 'moving' : 'still'}  dash ${show(b.dash)}  bite ${show(b.bite)}  speed ${Math.round((bugSpeed(b) / GAIT_SPEED.run) * 100)}%`),
     ...(bugs.length > DEBUG_BUGS ? [`  … ${bugs.length - DEBUG_BUGS} more`] : []),
   ];
   debugBox.textContent = lines.join('\n');
@@ -2060,6 +2001,21 @@ function render(now, dt, talkDt = dt) {
   // Things lying flat on the ground go under the characters whichever side they stand on
   for (const o of placed) if (o.flat) sprites.drawObject(ctx, o.sprite ?? o.name, 'body', o.sx, o.sy);
   drawParticles(PX, onGround); // the bits of things with them
+  if (SHOW_SAFE) { // the safe zones still on: a faint green over the sand in each, a dashed green ring round it
+    ctx.save();
+    for (const z of safeZones) {
+      if (z.gone()) continue;
+      ctx.beginPath();
+      ctx.ellipse(camX + toScreenX(z.o.x), camY + toScreenY(z.o.y), toScreenX(z.r), toScreenY(z.r), 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(90, 220, 120, 0.06)';
+      ctx.fill();
+      ctx.setLineDash([12, 8]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(110, 235, 135, 0.6)';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   // Armed, the knife's reach on the sand in front of us, towards where we aim (or face): over the
   // things lying flat (they don't stop it), under all standing there (the ones that do cut it short),
   // and under us
@@ -2151,10 +2107,10 @@ function render(now, dt, talkDt = dt) {
   };
   const bugPose = (b) => ({
     x: snap(camX + toScreenX(bugAt(b).x)), y: snap(camY + toScreenY(bugAt(b).y)), dir: b.dir,
-    time: b.attack !== undefined ? b.attack * 1000 : (b.mother ? now * BUG_STRIDE * (MOTHER_SPEED / BUG_SPEED) : b.legs) + b.animOffset, // (its bite plays once, from its start; her legs as slow as she is, a bug's as quick as it's got)
+    time: b.attack !== undefined ? b.attack * 1000 : b.legs + b.animOffset, // (its bite plays once, from its start; its legs as quick as it's got)
     anim: b.attack !== undefined ? 'bite' : b.moving ? 'walk' : 'idle',
   });
-  for (const b of bugs) sprites.drawCharacterShadow(ctx, b.mother ? 'mother' : 'bug', bugPose(b));
+  for (const b of bugs) sprites.drawCharacterShadow(ctx, 'bug', bugPose(b));
   // The ravens near enough to be seen: their shadows on the sand under them, their bodies up off it as they fly
   const seenRavens = ravens.filter((r) => Math.abs(r.x - me.x) < RAVEN_NEAR && Math.abs(r.y - me.y) < RAVEN_NEAR);
   const ravenPose = (r, up = true) => ({
@@ -2189,9 +2145,12 @@ function render(now, dt, talkDt = dt) {
   };
   // Bodies sorted by depth: objects and characters
   const bodies = [
-    ...placed.filter((o) => !o.flat).map((o) => ({ y: o.footprint ? tallY(o) : o.y, draw: () => sprites.drawObject(ctx, o.sprite ?? o.name, 'body', o.sx, o.sy, hidesMe(o) ? 0.45 : 1, o.frame) })),
+    // A big thing drawn in bands by how far down the ground each of its pixels stands (sprites.bands): each in
+    // its place among the characters, so each bit of it is in front of them or behind them as it should be
+    ...placed.filter((o) => !o.flat && sprites.bands(o.sprite ?? o.name)).flatMap((o) => sprites.bands(o.sprite ?? o.name).map((b) => ({ y: o.y + b.y * UNITS_PER_M, draw: () => sprites.drawBand(ctx, o.sprite ?? o.name, b, o.sx, o.sy) }))),
+    ...placed.filter((o) => !o.flat && !sprites.bands(o.sprite ?? o.name)).map((o) => ({ y: o.footprint ? tallY(o) : o.y, draw: () => sprites.drawObject(ctx, o.sprite ?? o.name, 'body', o.sx, o.sy, hidesMe(o) ? 0.45 : 1, o.frame) })),
     ...players.map((p) => ({ y: p.y, draw: () => sprites.drawCharacter(ctx, p.sprite, pose(p)) })),
-    ...bugs.map((b) => ({ y: b.y, draw: () => sprites.drawCharacter(ctx, b.mother ? 'mother' : 'bug', bugPose(b)) })),
+    ...bugs.map((b) => ({ y: b.y, draw: () => sprites.drawCharacter(ctx, 'bug', bugPose(b)) })),
     ...seenRavens.filter((r) => !r.h).map((r) => ({ y: r.y, draw: () => sprites.drawCharacter(ctx, 'raven', ravenPose(r)) })), // (on the ground)
     // Flames and embers of each fire stand at its debris pile
     ...fireSources.map((f, i) => ({ y: f.y, draw: () => drawParticles(PX, (p) => p.fire === i) })),
@@ -2201,7 +2160,7 @@ function render(now, dt, talkDt = dt) {
   // Life over each bug, and over the bottles and the bag while they're to be hit (under the dark: seen with them)
   for (const b of bugs) {
     const p = bugPose(b);
-    lifeBar(ctx, p.x, p.y - (b.mother ? MOTHER_LIFE_UP : BUG_LIFE_UP), b.life, b.most ?? BUG_LIFE);
+    lifeBar(ctx, p.x, p.y - BUG_LIFE_UP, b.life, BUG_LIFE);
   }
   for (const o of placed) {
     const life = lifeOf(o);
@@ -2217,7 +2176,7 @@ function render(now, dt, talkDt = dt) {
   // the things themselves
   const near = me.pick ? null : reachable();
   const shown = placed.filter((o) => o.label && !(o === bottles && (drillShown() || !bottles.frame))).map((o) => labelOf(o, o.sx, o.sy)); // (the drill draws the bottles')
-  const edges = labels.draw(shown, near ? near.id ?? near.name : null, near?.pickup || (near?.name === 'egg' && questOn(near)) || (near?.name === 'wreck' && quests.target() === 'wreck') ? held / HOLD_TIME : keys.has('KeyE') ? 1 : 0, dt); // (nothing to hold for: the key full while pressed)
+  const edges = labels.draw(shown, near ? near.id ?? near.name : null, near?.pickup || (near?.name === 'egg' && questOn(near)) ? held / HOLD_TIME : keys.has('KeyE') ? 1 : 0, dt); // (nothing to hold for: the key full while pressed)
   const bagCard = quests.target() === 'bag' && shown.find((item) => item.id === 'bag');
   if (bagCard) { // the knife's quest: what to do over the bag's name, on its edge (seen only with the bag, like it)
     const over = bagCard.box.y0 - LABEL_GAP - 22 - 7;

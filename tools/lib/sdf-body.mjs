@@ -102,8 +102,11 @@ export function renderBody(sdf, o) {
   const { W, H, anchor, pxPerM, elev, yaw, camDist, focusZ, ramps } = o;
   const material = o.material ?? (() => 0);
   const ce = Math.cos(elev), se = Math.sin(elev), cy = Math.cos(yaw), sy = Math.sin(yaw);
-  // World <-> model: the model is rotated by yaw around z
-  const map = (x, y, z) => sdf(x * cy + y * sy, -x * sy + y * cy, z);
+  // World <-> model: the model is rotated by yaw around z. trueGround: the ground's depth not foreshortened
+  // on screen (as the game lays it out: a meter down the screen as long as one across), the model stretched
+  // along it to make up for the camera's slant (big things: else they drift off where they stand)
+  const gy = o.trueGround ? se : 1, gk = Math.min(1, gy);
+  const map = (x, y, z) => gk * sdf(x * cy + y * gy * sy, -x * sy + y * gy * cy, z);
   // Camera looks at the focus point from the south (+y) and above
   const [fx, fy, fz] = [0, 0, focusZ];
   const [cx, cyy, cz] = [fx, fy + ce * camDist, fz + se * camDist];
@@ -183,6 +186,7 @@ export function renderBody(sdf, o) {
       if (cover < 2) continue;
       level[py * W + px] = shade(hit[0], hit[1], hit[2]);
       depth[py * W + px] = hit[3];
+      if (o.groundY) o.groundY[py * W + px] = hit[1] * gy; // (how far down the ground the bit seen here stands, as the game lays it out)
       mats[py * W + px] = material(hit[0] * cy + hit[1] * sy, -hit[0] * sy + hit[1] * cy, hit[2]);
     }
 
@@ -218,7 +222,10 @@ export function renderBody(sdf, o) {
         const x = px + ox, y = py + oy;
         return x >= 0 && y >= 0 && x < W && y < H && level[y * W + x] >= 0;
       });
-      if (near) out.set([...o.outline, 255], i * 4);
+      if (near) {
+        out.set([...o.outline, 255], i * 4);
+        if (o.groundY) o.groundY[i] = Math.max(...[[1, 0], [-1, 0], [0, 1], [0, -1]].map(([ox, oy]) => { const x = px + ox, y = py + oy; return x >= 0 && y >= 0 && x < W && y < H && level[y * W + x] >= 0 ? o.groundY[y * W + x] : -1e9; })); // (an outline's: the nearest of what it's round)
+      }
     }
   return out;
 }
@@ -230,7 +237,8 @@ export function renderBody(sdf, o) {
 export function renderShadow(sdf, o) {
   const { W, H, anchor, pxPerM, elev, yaw, camDist, focusZ } = o;
   const ce = Math.cos(elev), se = Math.sin(elev), cy = Math.cos(yaw), sy = Math.sin(yaw);
-  const map = (x, y, z) => sdf(x * cy + y * sy, -x * sy + y * cy, z);
+  const gy = o.trueGround ? se : 1, gk = Math.min(1, gy); // (as renderBody's)
+  const map = (x, y, z) => gk * sdf(x * cy + y * gy * sy, -x * sy + y * gy * cy, z);
   const [cx, cyy, cz] = [0, ce * camDist, focusZ + se * camDist];
   const focusSy = anchor[1] - focusZ * ce * pxPerM;
   const L = norm3(...o.light);
