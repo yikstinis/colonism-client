@@ -126,7 +126,8 @@ const shownTarget = () => (backpackCue.phase === 'armed' || backpackCue.phase ==
 // (what the quest is after is named in gold, as in its text; its name up out of the way of its life's dots, when it has them)
 const labelOf = (o, x, y) => {
   const box = sprites.objectInk(o.sprite ?? o.name, x, y);
-  return { id: o.id ?? o.name, text: o.label, sub: o.note, box: lifeOf(o) ? { ...box, y0: box.y0 - LIFE_ROOM } : box, quest: o.name === shownTarget(), side: questOn(o) };
+  const asks = o.name === 'fellow' ? fellowAsks() : []; // (the fellow: in gold while he's a story's ask to be asked, in blue while a side quest's)
+  return { id: o.id ?? o.name, text: o.label, sub: o.note, box: lifeOf(o) ? { ...box, y0: box.y0 - LIFE_ROOM } : box, quest: o.name === shownTarget() || asks.some((a) => a.gold), side: questOn(o) || asks.some((a) => a.side) };
 };
 // A thing's life, shown over it (see render/life.js) while it's to be hit, as [left, most]: the bottles'
 // while the drill's on (one each), the bag's while its quest is (a cut each); or null
@@ -1814,8 +1815,8 @@ const CHECKPOINT = 'colonism.checkpoint';
 const SECTORS = [
   { at: () => pod.home, explored: () => hasBackpack || checkpointReached, activity: () => hasBackpack },
   { at: () => STRUCTURES.home, explored: () => hasBackpack || checkpointReached, activity: () => firesideUsed },
-  { at: () => EQUIPMENT.home, explored: () => fellowAsked, activity: () => equipmentReturned }, // (D2 and C1: shown him by the fellow's answer)
-  { at: () => HUGE_THING.home, explored: () => fellowAsked, activity: () => eggKilled },
+  { at: () => EQUIPMENT.home, explored: () => fellowAsked, activity: () => equipmentReturned }, // (D2: shown him by the fellow's answer)
+  { at: () => HUGE_THING.home, explored: () => quests.started('hugeThing'), activity: () => eggKilled }, // (C1: once the fellow's spoken of it)
   { at: () => WRECK.home, explored: () => fellowThreatened, activity: () => false }, // (C3: shown him by his answer to the threat; its device not got yet)
   { at: () => D3, explored: () => fellowThreatened, activity: () => false }, // (and D3, next to it: on the way there)
 ];
@@ -1828,15 +1829,24 @@ let checkpointReached = false, firesideUsed = false, fellowTalked = false, fello
 let fellowAsk = false; // what to ask the fellow is up over the hero (by number), till he picks one or walks off
 // What he can ask the fellow (each while it can be: when()), numbered in order: what comes of it at once
 // (now()), as he asks; the fellow answers once he's said it (typed out, and a moment), and then what
-// comes of that (then()); gold: the story's
+// comes of that (then()); gold: the story's; side: a side quest's
 const FELLOW_ASKS = [{
-  text: 'How do I get off this planet?',
+  text: 'Why are you here alone?',
   gold: true,
+  minor: true, // (E's back while he answers: he can be cut off, the quest he gives on all the same)
   when: () => !fellowAsked && quests.target() === 'fellow', // (while the quest to ask him is on)
-  answer: 'I lost my equipment in the West. I have a couple of ideas, but I\'m completely useless without it, help me get it back. By the way, have you seen that huge thing near the pole?',
-  then() { // the quest to find a way off done (its note first), the next on; the beacon's sector and the pole's explored, their marks on the map
+  answer: 'The others flew off. I stayed to finish research. I don\'t like the others! Will you help me get my equipment back? Those damned bugs dragged it off.',
+  then() { // the quest to find a way off done (its note first), the next on: his equipment; the beacon's sector explored, its mark on the map
     quests.note('Still nothing interesting...');
     fellowAsked = true;
+  },
+}, {
+  text: 'You look weird!',
+  side: true, // (in blue: it starts a side quest)
+  minor: true, // (E's back while he answers: he can be cut off, the side quest on all the same)
+  when: () => fellowAsked && !quests.started('hugeThing'), // (once he's had his answer, till he's heard of it)
+  answer: 'So do you! You fell from the sky, I saw it... By the way, have you noticed that huge thing not far from the pole?',
+  then() { // the side quest to see it on; the pole's sector explored, its mark on the map
     quests.start('hugeThing');
   },
 }, {
@@ -1872,7 +1882,7 @@ const wellObj = OBJECTS.find((o) => o.name === 'well'), WELL_FOUND = 2.5 * UNITS
 function saveCheckpoint() {
   checkpointReached = true;
   try {
-    localStorage.setItem(CHECKPOINT, JSON.stringify({ level, xp, points, talents: talents.taken(), stats: character.stats, medkits, equipment: hasEquipment, equipmentReturned, fellowThreatened, wellSeen, quests: quests.save() }));
+    localStorage.setItem(CHECKPOINT, JSON.stringify({ level, xp, points, talents: talents.taken(), stats: character.stats, medkits, fellowAsked, equipment: hasEquipment, equipmentReturned, fellowThreatened, wellSeen, quests: quests.save() }));
   } catch { /* (no storage: nothing kept) */ }
 }
 function loadCheckpoint() {
@@ -1888,7 +1898,8 @@ function loadCheckpoint() {
   character.restore(saved.stats);
   me.hp = maxHp = HP + character.stats.strength; // (strength's health on top: all of it)
   quests.load(saved.quests);
-  fellowAsked = fellowTalked = quests.started('hugeThing'); // (the fellow's answer had: all it opened)
+  fellowAsked = saved.fellowAsked ?? quests.started('hugeThing'); // (the fellow's answer had: all it opened) (older checkpoints: by the quest it used to open too)
+  fellowTalked = fellowAsked;
   eggKilled = quests.finished('hugeThing'); // (burst before: only its pit there, its sector done)
   if (eggKilled) eggGone();
   hasEquipment = !!saved.equipment; // (picked up before: its crate gone)
@@ -2147,7 +2158,7 @@ function render(now, dt, talkDt = dt) {
   const bodies = [
     // A big thing drawn in bands by how far down the ground each of its pixels stands (sprites.bands): each in
     // its place among the characters, so each bit of it is in front of them or behind them as it should be
-    ...placed.filter((o) => !o.flat && sprites.bands(o.sprite ?? o.name)).flatMap((o) => sprites.bands(o.sprite ?? o.name).map((b) => ({ y: o.y + b.y * UNITS_PER_M, draw: () => sprites.drawBand(ctx, o.sprite ?? o.name, b, o.sx, o.sy) }))),
+    ...placed.filter((o) => !o.flat && sprites.bands(o.sprite ?? o.name)).flatMap((o) => sprites.bands(o.sprite ?? o.name).map((b) => ({ y: o.y + b.y * UNITS_PER_M, draw: () => sprites.drawBand(ctx, o.sprite ?? o.name, b, o.sx, o.sy, o.y + b.y * UNITS_PER_M > me.y && hidesMe(o) ? 0.45 : 1) }))), // (the bits in front of him see-through, if it covers him)
     ...placed.filter((o) => !o.flat && !sprites.bands(o.sprite ?? o.name)).map((o) => ({ y: o.footprint ? tallY(o) : o.y, draw: () => sprites.drawObject(ctx, o.sprite ?? o.name, 'body', o.sx, o.sy, hidesMe(o) ? 0.45 : 1, o.frame) })),
     ...players.map((p) => ({ y: p.y, draw: () => sprites.drawCharacter(ctx, p.sprite, pose(p)) })),
     ...bugs.map((b) => ({ y: b.y, draw: () => sprites.drawCharacter(ctx, 'bug', bugPose(b)) })),
@@ -2242,7 +2253,7 @@ function render(now, dt, talkDt = dt) {
   }
   // What he can do now, to pick by its number (what to ask the fellow, in gold: the story's): right
   // over him (over the hint, if it's up), the first on top, his line over them all
-  const choices = fellowAsk ? fellowAsks().map((ask) => ({ text: ask.text, gold: !!ask.gold })) : [];
+  const choices = fellowAsk ? fellowAsks().map((ask) => ({ text: ask.text, gold: !!ask.gold, side: !!ask.side })) : [];
   choices.forEach((c, i) => labels.warn(c.text, String(i + 1), sayEdge, sayAt - 6 - (choices.length - 1 - i) * 28, keys.has(`Digit${i + 1}`) ? 1 : 0, '', !!c.gold, !!c.side));
   if (choices.length) sayAt -= choices.length * 28;
   const said = speech.draw(me0.x, sayAt, talkDt, sayEdge);
@@ -2283,7 +2294,7 @@ function render(now, dt, talkDt = dt) {
     { at: pod.home, color: '#fff', name: pod.label },
     { at: POLE, color: '#fff', name: 'N' }, // the poles
     { at: POLE.map((v) => -v), color: '#fff', name: 'S' },
-    ...(fellowSeen && goal?.name !== 'fellow' ? [{ at: fellowObj.home, color: '#fff', name: fellowObj.label }] : []), // (the fellow, once he's been seen)
+    ...(fellowSeen && goal?.name !== 'fellow' ? [fellowAsks().some((a) => a.side) ? { at: fellowObj.home, color: BLUE, name: fellowObj.label, side: true } : { at: fellowObj.home, color: '#fff', name: fellowObj.label }] : []), // (the fellow, once he's been seen: in blue while he's a side quest to give)
     ...(wellSeen ? [{ at: wellObj.home, color: '#fff', name: wellObj.label }] : []), // (the well, once he's come up to it)
     ...(goal ? [{ at: goal.home, color: GOLD, name: quests.mark() ?? goal.label, quest: true }] : []), // where the quest leads, in gold (as the quest is)
     ...(goal !== STRUCTURES && goal?.name !== 'campfire' && mapCue.phase !== 'armed' ? [{ at: STRUCTURES.home, color: '#fff', name: STRUCTURES.label }] : []), // (and the safe place, once he's said where it is: white, when it's not where the quest leads)

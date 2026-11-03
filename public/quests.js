@@ -132,13 +132,20 @@ export function createQuests(box, side, done = () => {}) {
     box.classList.toggle('done', finished);
     box.classList.toggle('main', !!q.main);
   }
-  function renderSides() {
+  // slide: a side quest just started, the panel slides in from the right as the main one's does (if it wasn't up)
+  function renderSides(slide = false) {
     const next = sidesOn().map((q) => `<div class="title">${q.title}</div>` + (q.about ? `<div class="about">${q.about}</div>` : '')).join('<div class="split"></div>');
     if (next === sideHtml) return;
+    const appears = slide && !sideHtml && !!next;
     sideHtml = next;
     side.innerHTML = sideHtml;
+    if (appears) side.classList.add('coming'); // (off past the screen's edge first...)
     side.classList.toggle('none', !sideHtml);
     side.classList.add('side');
+    if (appears) {
+      side.getBoundingClientRect(); // (...laid out there...)
+      side.classList.remove('coming'); // (...then in)
+    }
   }
   render();
   renderSides();
@@ -203,7 +210,7 @@ export function createQuests(box, side, done = () => {}) {
     // A side quest (by its id in sides) on from now; started(id): it is (done or not); finished(id): it's done
     start(id) {
       sides[id].on = true;
-      renderSides();
+      renderSides(true);
     },
     started: (id) => !!sides[id].on,
     finished: (id) => !!sides[id].on && sides[id].steps.every((s) => s.done), // (and done)

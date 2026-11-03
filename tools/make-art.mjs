@@ -1434,8 +1434,11 @@ function garageModel() {
 
 function makeGarage() {
   const { sdf, material, shape } = garageModel();
-  const view = { pxPerM: PX_PER_M, elev: ELEV, yaw: GARAGE.yaw, camDist: 40, focusZ: 0.9 };
-  const img = renderBody(sdf, { W: GARAGE_W, H: GARAGE_H, anchor: GARAGE_ANCHOR, ...view, ramps: GARAGE_RAMPS, material, outline: [6, 7, 6], bound: [1.4, 5.8] });
+  // (the camera far off: no perspective, its ground laid out as the game lays it; with a depth map, so the
+  // game draws it in bands, each bit of it in front of the characters or behind them as it stands)
+  const view = { pxPerM: PX_PER_M, elev: ELEV, yaw: GARAGE.yaw, camDist: 400, focusZ: 0.9, trueGround: true };
+  const groundY = new Float32Array(GARAGE_W * GARAGE_H).fill(-1e9);
+  const img = renderBody(sdf, { W: GARAGE_W, H: GARAGE_H, anchor: GARAGE_ANCHOR, ...view, ramps: GARAGE_RAMPS, material, outline: [6, 7, 6], bound: [1.4, 5.8], groundY });
   const sh = new Sheet(GARAGE_W, GARAGE_H);
   sh.blit(img, GARAGE_W, GARAGE_H, 0, 0);
   save(sh, 'garage.png');
@@ -1444,7 +1447,7 @@ function makeGarage() {
   ss.blit(shadow, GARAGE_SHADOW_W, GARAGE_SHADOW_H, 0, 0);
   save(ss, 'garage_shadow.png');
   return {
-    image: 'garage.png', frame: [GARAGE_W, GARAGE_H], anchor: GARAGE_ANCHOR,
+    image: 'garage.png', frame: [GARAGE_W, GARAGE_H], anchor: GARAGE_ANCHOR, depth: saveDepth(groundY, GARAGE_W, GARAGE_H, 'garage'),
     smoke: [[0.95, -1.9, GARAGE_SIZE[2] + 0.75]], // (out of its vent pipe, meters, model space)
     shadow: { image: 'garage_shadow.png', frame: [GARAGE_SHADOW_W, GARAGE_SHADOW_H], anchor: GARAGE_SHADOW_ANCHOR },
   };
@@ -1473,14 +1476,17 @@ const [F_SKIN, F_SUIT, F_RIM, F_BLACK, F_BEARD, F_GLASS] = [0, 1, 2, 3, 4, 5];
 function fellowModel(b = 0) {
   const parts = FELLOW_RAMPS.map(() => []);
   const up = 0.012 * b, E = (c, r) => ellipsoid(c, r), C = (a, c, r0, r1 = r0) => capsule(a, c, r0, r1);
-  for (const sx of [-1, 1]) {
-    parts[F_BLACK].push(C([sx * 0.068, -0.02, 0.04], [sx * 0.078, 0.09, 0.034], 0.04, 0.033)); // the boots' feet...
-    parts[F_BLACK].push(C([sx * 0.068, -0.005, 0.045], [sx * 0.067, 0, 0.11], 0.044, 0.046)); // ...and their short shafts, to the ankle
-    parts[F_SUIT].push(C([sx * 0.067, 0, 0.12], [sx * 0.062, 0.01, 0.82], 0.052, 0.064)); // the suit's legs, loose, over them
-    parts[F_RIM].push(C([sx * 0.067, 0, 0.125], [sx * 0.067, 0, 0.135], 0.054)); // (the cuffs' elastic at the ankles)
+  // His legs a little apart, not quite even: his weight on the left one, straight under him; the right one
+  // easy, its foot a little out and forward, its toe turned out more, its knee bent a little more
+  for (const [sx, out, fwd, bend, turn] of [[-1, 0, -0.01, 0.02, 0.015], [1, 0.03, 0.05, 0.05, 0.05]]) {
+    const hip = [sx * 0.07, 0, 0.84], knee = [sx * (0.08 + out / 2), fwd / 2 + bend, 0.47], ankle = [sx * (0.088 + out), fwd, 0.12];
+    parts[F_BLACK].push(C([ankle[0], fwd - 0.02, 0.04], [ankle[0] + sx * turn, fwd + 0.1, 0.034], 0.04, 0.032)); // the boots' feet...
+    parts[F_BLACK].push(C([ankle[0], fwd - 0.005, 0.045], ankle, 0.04, 0.042)); // ...and their short shafts, to the ankle
+    parts[F_SUIT].push(C(hip, knee, 0.068, 0.052), C(knee, ankle, 0.052, 0.04)); // the suit's legs: thin, narrowing down to the ankle
+    parts[F_RIM].push(C([ankle[0], fwd, 0.13], [ankle[0], fwd, 0.14], 0.046)); // (the cuffs' elastic at the ankles)
   }
   // The body: lean, the suit hanging loose on it, the chest stooped forward
-  parts[F_SUIT].push(E([0, 0, 0.86], [0.14, 0.11, 0.12]), E([0, 0.02, 1.03], [0.14, 0.115, 0.17]), E([0, 0.04, 1.2 + up], [0.135, 0.11, 0.14]));
+  parts[F_SUIT].push(E([0, 0, 0.9], [0.15, 0.11, 0.1]), E([0, 0.02, 1.03], [0.14, 0.115, 0.17]), E([0, 0.04, 1.2 + up], [0.135, 0.11, 0.14]));
   parts[F_SUIT].push(E([0, 0.05, 1.3 + up], [0.125, 0.085, 0.065])); // its shoulders, narrow and sloping (an old man's)
   parts[F_RIM].push(C([0, 0.12, 0.8], [0, 0.17, 1.14], 0.011)); // the zip's flap, down its front
   for (const sx of [-1, 1]) { // the arms in their loose sleeves, hanging by his sides, a little bent forward

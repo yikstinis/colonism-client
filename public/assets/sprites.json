@@ -1036,6 +1036,11 @@
         140,
         165
       ],
+      "depth": {
+        "image": "garage_depth.png",
+        "offset": 100,
+        "per": 100
+      },
       "smoke": [
         [
           0.95,

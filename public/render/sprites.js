@@ -140,10 +140,12 @@ export async function loadSprites(manifestUrl) {
 
     // A big object's depth bands ({ y (meters down the ground from its anchor), ... }), or undefined
     bands: (name) => objects[name]?.bands,
-    // One of them, the object's anchor at screen (x, y)
-    drawBand(ctx, name, band, x, y) {
+    // One of them, the object's anchor at screen (x, y); alpha: see-through (in front of him, over him)
+    drawBand(ctx, name, band, x, y, alpha = 1) {
       const s = objects[name], k = s.scale ?? scale;
+      ctx.globalAlpha = alpha;
       blit(ctx, band.canvas, 0, 0, band.canvas.width, band.canvas.height, Math.round((x - (s.anchor[0] - band.x0) * k) / k) * k, Math.round((y - (s.anchor[1] - band.y0) * k) / k) * k, false, k);
+      ctx.globalAlpha = 1;
     },
 
     // An object's layers, each with its anchor at screen (x, y): 'decal' (on the ground, under

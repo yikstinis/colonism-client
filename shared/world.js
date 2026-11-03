@@ -249,12 +249,13 @@ const TURRET_SOLID = { x: TURRET.x, y: TURRET.y, r: 0.34 * UNITS_PER_M, cover: t
 OBJECTS.push({ name: 'turret', x: TURRET.x, y: TURRET.y, solid: TURRET_SOLID, aim: Math.PI / 2 });
 OBSTACLES.push(TURRET_SOLID);
 // Over them all, to one side: a garage, the Soviet kind (a brick box, longer than wide, along y), its
-// gates in its +y end (facing the camera, down to the campfire); it stops the hero, and shots, along a
-// row of circles down it
+// gates in its +y end (facing the camera, down to the campfire); it stops the hero, and shots, by its
+// walls (a rectangle round them)
 export const GARAGE = { x: STRUCTURES.x - 2.2 * UNITS_PER_M, y: STRUCTURES.y - 6.5 * UNITS_PER_M, yaw: 0.26 }; // (turned a little)
 export const GARAGE_SIZE = [1.7, 3.0, 3.6]; // meters: its half width (x), half depth (y), its walls' height (well over the hero)
 OBJECTS.push({ name: 'garage', x: GARAGE.x, y: GARAGE.y, yaw: GARAGE.yaw, footprint: GARAGE_SIZE }); // (footprint: big and tall, see client.js's drawing order)
-OBSTACLES.push(...[-2.2, -1.1, 0, 1.1, 2.2].map((m) => ({ ...modelToWorld(GARAGE, [0, m]), r: 1.75 * UNITS_PER_M, cover: true, of: 'garage' })));
+const GARAGE_KEEP = 0.15; // meters past its walls (he's wider than his feet: his pack; the art's depth sorts the rest, see client.js)
+OBSTACLES.push(...solidRect({ ...GARAGE, name: 'garage' }, 0, -GARAGE_SIZE[0] - GARAGE_KEEP, GARAGE_SIZE[0] + GARAGE_KEEP, -GARAGE_SIZE[1] - GARAGE_KEEP, GARAGE_SIZE[1] + GARAGE_KEEP)); // (its walls, square to the corners)
 // Its torn-off gate leaf, leant against its side wall by the doorway (its middle, meters, in its model;
 // the art draws it there): it stops the hero, and shots, along a few circles down its foot, and in the
 // gap between it and the wall
