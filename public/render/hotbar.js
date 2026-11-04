@@ -16,6 +16,16 @@ const XP_H = 5, XP_GAP = 6; // px: the experience bar's height, between it and t
 
 // The icons: plain white outlines, as simple as can be, centered on (x, y); dim: none left
 const LINE = 'rgba(255, 255, 255, 0.9)', DIM = 'rgba(255, 255, 255, 0.25)';
+// The fist's lines (the hotbar's knife, the cursor in the knife's reach), its middle at (x, y)
+export function fistPath(ctx, x, y) {
+  ctx.roundRect(x - 8, y - 6, 16, 11, 3); // the fingers
+  ctx.moveTo(x - 4, y - 6); ctx.lineTo(x - 4, y - 1); // between them
+  ctx.moveTo(x, y - 6); ctx.lineTo(x, y - 1);
+  ctx.moveTo(x + 4, y - 6); ctx.lineTo(x + 4, y - 1);
+  ctx.moveTo(x - 8, y + 1); ctx.lineTo(x + 3, y + 1); // the thumb
+  ctx.moveTo(x - 5, y + 5); ctx.lineTo(x - 5, y + 9); ctx.lineTo(x + 6, y + 9); ctx.lineTo(x + 6, y + 5); // the wrist
+}
+
 export const ICONS = {
   cross(ctx, x, y, dim) { // a plus, its arms as wide as they're long
     const a = 3, l = 9;
@@ -29,12 +39,7 @@ export const ICONS = {
   fist(ctx, x, y, dim) { // seen from the front: four knuckles over the fingers folded in, the thumb across them, the wrist under
     ctx.strokeStyle = dim ? DIM : LINE;
     ctx.beginPath();
-    ctx.roundRect(x - 8, y - 6, 16, 11, 3); // the fingers
-    ctx.moveTo(x - 4, y - 6); ctx.lineTo(x - 4, y - 1); // between them
-    ctx.moveTo(x, y - 6); ctx.lineTo(x, y - 1);
-    ctx.moveTo(x + 4, y - 6); ctx.lineTo(x + 4, y - 1);
-    ctx.moveTo(x - 8, y + 1); ctx.lineTo(x + 3, y + 1); // the thumb
-    ctx.moveTo(x - 5, y + 5); ctx.lineTo(x - 5, y + 9); ctx.lineTo(x + 6, y + 9); ctx.lineTo(x + 6, y + 5); // the wrist
+    fistPath(ctx, x, y);
     ctx.stroke();
   },
   roll(ctx, x, y, dim) { // an arrow curling round most of the way, its head at the end

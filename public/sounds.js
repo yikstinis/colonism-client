@@ -728,6 +728,14 @@ export function createSounds() {
       ring(out, t, 1700 * p, 0.008, 0.05, 0.05); // (its ring, low, faint under it)
     },
 
+    // The mouse's wheel turned a notch (the journal scrolled by one): a short, light tick, a detent's
+    notch() {
+      if (!ac || ac.state !== 'running') return;
+      const t = ac.currentTime + 0.005, p = 0.95 + Math.random() * 0.1, out = voice(0, true);
+      burst(out, t, { type: 'highpass', from: 5000 * p, gain: 0.08, time: 0.003, attack: 0.0002 }); // the tick
+      ring(out, t, 2600 * p, 0.035, 0.015, 0.05); // a faint ring under it
+    },
+
     // The trigger pulled with no round to go (reloading, or out): just a short dry click, low and dull
     click() {
       if (!ac || ac.state !== 'running') return;

@@ -113,11 +113,21 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
       title: 'Huge thing',
       target: 'hugeThing', // (a place: its mark in sector C1, see client.js; a white arrow to it)
       about: 'The fellow saw some <span class="goal">huge thing</span> near the pole. Might be worth a look...',
-      steps: [{ text: 'Check out the huge thing', update: ({ eggKilled }) => eggKilled }], // (done once it's burst, see client.js)
+      steps: [
+        { text: 'Check out the huge thing', update: ({ eggKilled }) => eggKilled }, // (once it's burst, see client.js)
+        { // then back to the fellow to tell him: only then is it done
+          text: 'Tell the <span class="goal">fellow</span> about it',
+          about: 'I smashed that <span class="goal">huge thing</span>! I bet the <span class="goal">fellow</span> will be glad...', // (in place of the quest's, while it's this step)
+          target: 'fellow',
+          update: ({ eggReported }) => eggReported, // (he's told him: 2, by him, see client.js)
+        },
+      ],
     },
   };
   let current = 0, html = '', sideHtml = '', last = {}; // last: the latest input
   const sidesOn = () => Object.values(sides).filter((q) => q.on && !q.steps.every((s) => s.done));
+  const step = (q) => q.steps.find((s) => !s.done); // (the step it's at: its first not done)
+  const aboutOf = (q) => step(q)?.about ?? q.about; // (what it's about now: the step's, if it has its own)
 
   function render() {
     const q = quests[current];
@@ -134,7 +144,7 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
   }
   // slide: a side quest just started, the panel slides in from the right as the main one's does (if it wasn't up)
   function renderSides(slide = false) {
-    const next = sidesOn().map((q) => `<div class="sq" data-id="${q.id}"><div class="title">${q.title}</div>` + (q.about ? `<div class="about">${q.about}</div>` : '') + '</div>').join('<div class="split"></div>');
+    const next = sidesOn().map((q) => `<div class="sq" data-id="${q.id}"><div class="title">${q.title}</div>` + (aboutOf(q) ? `<div class="about">${aboutOf(q)}</div>` : '') + '</div>').join('<div class="split"></div>');
     if (next === sideHtml) return;
     const appears = slide && !sideHtml && !!next;
     sideHtml = next;
@@ -194,7 +204,7 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
     list() {
       const doneSides = Object.values(sides).filter((q) => q.on && q.steps.every((s) => s.done));
       const entry = (q, on, side = false) => ({
-        title: q.title, about: q.about ?? '', main: !!q.main, side, done: q.steps.every((s) => s.done), on, steps: q.steps.map((s) => ({ text: s.text, done: !!s.done })),
+        title: q.title, about: (side ? aboutOf(q) : q.about) ?? '', main: !!q.main, side, done: q.steps.every((s) => s.done), on, steps: q.steps.map((s) => ({ text: s.text, done: !!s.done })),
         notes: q.notes ?? [],
       });
       return [
@@ -233,6 +243,7 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
     },
     started: (id) => !!sides[id].on,
     finished: (id) => !!sides[id].on && sides[id].steps.every((s) => s.done), // (and done)
+    stepDone: (id, k) => !!sides[id].on && !!sides[id].steps[k]?.done, // (its step k done)
     // Something that happened, noted down in the journal under the quest on now (as he'd write it), or
     // under a side quest (by its id in sides)
     note(text, id = null) {
@@ -244,8 +255,8 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
       const step = quests[current].steps.find((s) => !s.done);
       return step ? step.target ?? quests[current].target ?? null : null;
     },
-    // The names of what the side quests on lead to (their own targets)
-    sideTargets: () => sidesOn().map((q) => q.target).filter(Boolean),
+    // The names of what the side quests on lead to (the steps they're at's targets, or their own)
+    sideTargets: () => sidesOn().map((q) => step(q)?.target ?? q.target).filter(Boolean), // (the step's, if it has its own)
     // The name the current quest's target goes by on the map, if not its own (its mark), or null
     mark: () => quests[current].mark ?? null,
     // The current quest is the story's (gold)
@@ -256,7 +267,7 @@ export function createQuests(box, side, done = () => {}, started = () => {}) {
       return q.steps.every((s) => s.done) ? null : q.cue ?? null;
     },
     // input: { dt, running (s), dx, dy (the run's direction), aim (angle to the cursor, or null),
-    // hasBackpack, bottlesBroken (bottles shot off the crate), bagHits (knife cuts in the punching bag), talentsTaken (how many he has), firesideUsed (he's used the safe space's campfire: E), fellowTalked (he's spoken to the fellow: E), fellowAsked (he's asked him the way off: 1, and had his answer), hasEquipment (he's picked up the fellow's crate), equipmentReturned (and handed it back to him: E by him), fellowThreatened (told him he's going to die: the evacuation plan's answer) }
+    // hasBackpack, bottlesBroken (bottles shot off the crate), bagHits (knife cuts in the punching bag), talentsTaken (how many he has), firesideUsed (he's used the safe space's campfire: E), fellowTalked (he's spoken to the fellow: E), fellowAsked (he's asked him the way off: 1, and had his answer), hasEquipment (he's picked up the fellow's crate), equipmentReturned (and handed it back to him: E by him), fellowThreatened (told him he's going to die: the evacuation plan's answer), eggKilled (the huge thing burst), eggReported (and the fellow told: 2) }
     update(input) {
       last = input;
       const finished = [];

@@ -1,5 +1,5 @@
 import {
-  SPAWN, OBJECTS, REACH, ROLL_TIME, ROLL_COOLDOWN, UNITS_PER_M, VISION, GAIT_SPEED, CHART0, PLANET, SYSTEM, PLANET_R, POLE, STRIKE_SLANT, STRIKE_WAY, BAG_HITS, STRUCTURES, HUGE_THING, EQUIPMENT, WRECK, SAFE_ZONES, RAVENS, VOLCANO_KINDS, modelToWorld, solidAt, gapTo, TURRET_FRAMES, TURRET_RANGE, TURRET_MUZZLE, recenter, move, dirFromVector, dirVector, gait, rayHit, addObstacle, removeObstacle, startRoll, updateRoll, CROUCH_SPEED, CROUCH_AIM, CROUCH_CYCLE, AIM_OUT_TIME, AIM_OFFSETS, FIRE_ROUNDS, RELOAD_TIME, GAIT_CYCLE, SHOT_RANGE, SHOT_SPREAD, shotSway, PICK_TIME, PICK_GRAB, SLASH_TIME, SLASH_COOLDOWN, SLASH_RANGE, SLASH_ARC, BUG_BITE_TIME, BUG_BITE_SNAP,
+  SPAWN, OBJECTS, REACH, ROLL_TIME, ROLL_COOLDOWN, UNITS_PER_M, VISION, GAIT_SPEED, CHART0, PLANET, SYSTEM, PLANET_R, POLE, STRIKE_SLANT, STRIKE_WAY, BAG_HITS, STRUCTURES, HUGE_THING, EQUIPMENT, WRECK, SAFE_ZONES, RAVENS, VOLCANO_KINDS, modelToWorld, solidAt, gapTo, TURRET_FRAMES, TURRET_RANGE, TURRET_MUZZLE, recenter, move, dirFromVector, dirVector, gait, rayHit, addObstacle, removeObstacle, startRoll, updateRoll, CROUCH_SPEED, CROUCH_AIM, CROUCH_CYCLE, AIM_OUT_TIME, AIM_OFFSETS, FIRE_ROUNDS, RELOAD_TIME, GAIT_CYCLE, SHOT_RANGE, SHOT_SPREAD, shotSway, PICK_TIME, PICK_GRAB, SLASH_TIME, SLASH_COOLDOWN, SLASH_LUNGE, SLASH_RANGE, SLASH_ARC, BUG_BITE_TIME, BUG_BITE_SNAP,
 } from '/shared/world.js';
 import { cellPoint } from '/shared/grid.js';
 import { ZOOM, HEIGHT_PX, toScreenX, toScreenY } from '/render/view.js';
@@ -7,11 +7,11 @@ import { loadSprites } from '/render/sprites.js';
 import { createGround } from '/render/ground.js';
 import { createQuests } from '/quests.js';
 import { createSounds } from '/sounds.js';
-import { FONT, GAP as LABEL_GAP, GOLD, BLUE, HOLD_TIME, createLabels } from '/render/labels.js';
+import { FONT, GAP as LABEL_GAP, GOLD, BLUE, HOLD_TIME, WHEEL, createLabels } from '/render/labels.js';
 import { createSpeech, TYPE_RATE } from '/render/speech.js';
 import { createGuide } from '/render/guide.js';
 import { createReach } from '/render/reach.js';
-import { createHotbar, ICONS } from '/render/hotbar.js';
+import { createHotbar } from '/render/hotbar.js';
 import { TALENTS, TALENT_POINTS, createTalents } from '/render/talents.js';
 import { lifeBar, RING_STEP, RING_THICK, BAR_LEN, BAR_PERIOD, fade } from '/render/life.js';
 import { createJournal } from '/render/journal.js';
@@ -28,6 +28,10 @@ const hud = document.getElementById('hud');
 const questBox = document.getElementById('quest');
 const sideBox = document.getElementById('side');
 let journalOpen = false; // the journal (J)
+let journalSkip = 0; // how many of the latest done quests the journal's scrolled past (the wheel: one a notch)
+let wheelFlash = 0; // 1 as the wheel turns the journal a notch, dying down (its key on the Scroll card fills)
+let windowHead = 0; // px down the screen: the bottom of every window's cards over it (its name, Esc), as the map's open (see render)
+let cursorTilt = 0; // 0: the crosshair upright (+), 1: tilted over (×) in the knife's reach
 const debugBox = document.getElementById('debug');
 const drawGround = createGround(document.getElementById('ground')); // the desert, under this canvas
 
@@ -243,7 +247,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyT' && !e.repeat && level > 1 && me.hp > 0) {
     talentsOpen = !talentsOpen;
-    if (talentsOpen) backpackOpen = false;
+    if (talentsOpen) backpackOpen = mapOpen = journalOpen = false; // (one window at a time: the one open shut)
     if (talentsOpen) sounds.press(); // (the key's click: in, and out the other way round)
     else sounds.done();
   }
@@ -260,7 +264,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyX' && !e.repeat && hasBackpack && medkits > 0 && medkitCool <= 0 && me.hp > 0 && me.hp < maxHp) { // a medkit: health back
     medkits--;
-    medkitCool = MEDKIT_COOLDOWN;
+    medkitCool = aidWait();
     me.hp = Math.min(maxHp, me.hp + MEDKIT_HEAL);
     hotbar.used('X');
     healed();
@@ -280,12 +284,14 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyJ' && !e.repeat && me.hp > 0) { // the journal, big in the middle as the map (one or the other)
     journalOpen = !journalOpen;
     if (journalOpen) mapOpen = talentsOpen = backpackOpen = false;
+    journalSkip = 0; // (it opens on the latest)
+    journal.reset();
     if (journalOpen) sounds.press(); // (the key's click: in, and out the other way round)
     else sounds.done();
   }
   if (e.code === 'KeyM' && !e.repeat && mapKnown) {
     mapOpen = !mapOpen;
-    if (mapOpen) journalOpen = backpackOpen = false;
+    if (mapOpen) journalOpen = backpackOpen = talentsOpen = false; // (one window at a time: the one open shut)
     if (mapOpen) sounds.press(); // (the key's click: in, and out the other way round, as the talents')
     else sounds.done();
   }
@@ -342,6 +348,23 @@ window.addEventListener('mouseup', (e) => {
   }
   if (e.button === 2) triggerHeld = false;
 });
+// The wheel scrolls the journal through the quests done, one a notch, with a tick: up, older ones come
+// down; down, back to the latest (a trackpad's small steps add up to a notch)
+const NOTCH = 50; // px of the wheel's to one notch
+let wheelSum = 0;
+window.addEventListener('wheel', (e) => {
+  if (!journalOpen) return;
+  wheelSum -= e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+  if (Math.abs(wheelSum) < NOTCH) return;
+  const by = Math.sign(wheelSum);
+  wheelSum = 0; // (one notch at a time, however hard it's flicked)
+  const most = quests.list().filter((q) => !q.on).length; // (all the way back to the first)
+  const next = Math.max(0, Math.min(most, journalSkip + by));
+  if (next === journalSkip) return;
+  journalSkip = next;
+  wheelFlash = 1;
+  sounds.notch();
+}, { passive: true });
 window.addEventListener('contextmenu', (e) => e.preventDefault()); // the right button fires
 window.addEventListener('blur', () => {
   keys.clear();
@@ -715,17 +738,16 @@ const BOTTLES_ALL = BOTTLE_SPOTS.length;
 
 const bag = OBJECTS.find((o) => o.name === 'bag');
 const bagStand = OBJECTS.find((o) => o.name === 'bag_stand');
+// How far through its lunge he's got (0..1) by t seconds into a slash: eased in and out, done at SLASH_LUNGE
+const lunges = () => talents.has('lunge'); // (the talent's to come: till then, a slash where he is)
+const lunge = (t) => { const k = Math.min(1, t / (SLASH_TIME * SLASH_LUNGE)); return k * k * (3 - 2 * k); };
 const SLASH_CUT = 0.55; // how far through a slash (0..1) the blade's in the middle of its sweep: it hits then
 let bagHits = 0; // (the quest counts them)
 let bagSwing = 0; // 1 right after a hit, dying down: how hard it rocks
 const BAG_BITS = ['#9c221a', '#69130f', '#c8b48a', '#a5967c', '#1b1b22']; // its leather, the sand in it, its straps
 
-// The bag's within the slash: its near side in reach, inside the arc where he aims
-function bagInReach() {
-  const dx = bag.x - me.x, dy = bag.y - me.y;
-  const off = Math.atan2(Math.sin(Math.atan2(dy, dx) - aimAngle()), Math.cos(Math.atan2(dy, dx) - aimAngle()));
-  return objects.includes(bag) && Math.hypot(dx, dy) - bagStand.solid.r <= SLASH_RANGE && Math.abs(off) <= SLASH_ARC / 2;
-}
+// The bag's within the slash (see inSlash)
+const bagInReach = () => objects.includes(bag) && inSlash(bag.x, bag.y, bagStand.solid.r);
 
 // A round in the bag: sand and bits of leather knocked out of it, back the shot's way mostly, and it shudders
 function shootBag(a, x, y) {
@@ -771,8 +793,9 @@ function hitBag() {
 // flying, lying round a while as a bug's, a cloud of its yellow reek; the pit it stood over left, its yellow reek rising out of it for good ----------
 
 const egg = OBJECTS.find((o) => o.name === 'egg'), eggPit = OBJECTS.find((o) => o.name === 'egg_pit');
-let eggKilled = false; // (its quest done with it)
-const EGG_LEVEL = 3; // (killed, he's up to this level, if he's not yet)
+let eggKilled = false; // (burst: its quest's first step done with it)
+let eggReported = false; // (and the fellow told: its quest done)
+const EGG_LEVEL = 3; // (its quest done, he's up to this level, if he's not yet)
 const EGG_POINTS = 1; // (and these talent points more, for it)
 const EGG_LIFE = 13, EGG_HATCH = [1, 5]; // (how many crawl out of it at a hit: from, to)
 let eggLife = null; // what's left of it, from when it's woken (null: not yet)
@@ -785,12 +808,8 @@ function wakeEgg() {
   egg.say = null; // (nothing more to say to it: E's done with it)
 }
 
-// The egg's near side in reach of the slash, inside the arc where he aims
-function eggInReach() {
-  const dx = egg.x - me.x, dy = egg.y - me.y;
-  const off = Math.atan2(Math.sin(Math.atan2(dy, dx) - aimAngle()), Math.cos(Math.atan2(dy, dx) - aimAngle()));
-  return Math.hypot(dx, dy) - egg.solid.r <= SLASH_RANGE && Math.abs(off) <= SLASH_ARC / 2;
-}
+// The egg's within the slash (see inSlash)
+const eggInReach = () => inSlash(egg.x, egg.y, egg.solid.r);
 
 // The egg hurt by n, at (x, y) on it, from angle a (none below nothing: what comes of that's to come)
 function hurtEgg(n, a, x, y) {
@@ -807,12 +826,16 @@ function hurtEgg(n, a, x, y) {
 // The egg bursts (the last hit from angle a): gone, the pit it stood over (a well of its poison, hidden
 // under it till now) left where it was, reeking on and on; out of where it was, in EGG_BURSTS waves one after
 // another, chunks of it flung high and wide (the hit's way most, lying round a while), a cloud of its
-// reek. Its quest done with it: up to EGG_LEVEL, and a talent point more for it (EGG_POINTS)
+// reek. Its quest's first step done with it (its reward once the fellow's told: see eggReward)
 function burstEgg(a) {
   eggGone();
   EGG_BURSTS.forEach((n, k) => setTimeout(() => eggWave(a, n), k * EGG_BURST_GAP));
   eggKilled = true;
   quests.note('Nasty thing...', 'hugeThing'); // (in the journal, under its quest)
+}
+// The huge thing's quest done (the fellow told it's burst): up to EGG_LEVEL, and a talent point more
+// for it (EGG_POINTS)
+function eggReward() {
   while (level < EGG_LEVEL) levelUp();
   points += EGG_POINTS;
   if (talentCue === 'done') talentAsk = true; // (what to press, over him, till it's spent)
@@ -863,11 +886,11 @@ let drill = 'off';
 // The rounds: counted once the drill's done: in the magazine; full
 // magazines to put in he has no end of
 const MAG = 10; // rounds in one
-// The knife's wait after a slash, the gun's reload and the wait after a roll, each 1% shorter for each rank of its talent (of
+// The knife's wait after a slash, the gun's reload and the wait after a medkit, each 1% shorter for each rank of its talent (of
 // what's left of it each time: never down to nothing)
 const knifeWait = () => SLASH_COOLDOWN * 0.99 ** talents.rank('quickknife');
 const reloadTime = () => RELOAD_TIME * 0.99 ** talents.rank('quickreload');
-const rollWait = () => ROLL_COOLDOWN * 0.99 ** talents.rank('quickroll'); // (the roll's too)
+const aidWait = () => MEDKIT_COOLDOWN * 0.99 ** talents.rank('quickaid');
 const RELOAD_SOUNDS = [[0.55, 'in'], [1, 'bolt']]; // a reload's sounds, at how far through it (0..1): the new one in, the bolt (as it's done: he can fire then)
 // A reload started: the magazine out at once (or after seconds), heard then whether or not it goes on yet
 // (running, it waits)
@@ -1097,10 +1120,17 @@ function bugsInCone() {
   });
 }
 
-// (x, y), r round it, is within the knife's slash: its near side in reach, inside the arc where he aims
+// (x, y), r round it, is within the knife's slash: its near side in reach, inside the arc where he aims,
+// from anywhere along his lunge so far (where it started to where he is: all in his way is cut)
+const SLASH_ALONG = 6; // points along the lunge it's tried from
 function inSlash(x, y, r) {
-  const dx = x - me.x, dy = y - me.y, a = Math.atan2(dy, dx) - aimAngle();
-  return Math.hypot(dx, dy) - r <= SLASH_RANGE && Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) <= SLASH_ARC / 2;
+  const from = me.slash?.from ?? me;
+  for (let i = 0; i <= SLASH_ALONG; i++) {
+    const k = i / SLASH_ALONG, ox = from.x + (me.x - from.x) * k, oy = from.y + (me.y - from.y) * k;
+    const dx = x - ox, dy = y - oy, a = Math.atan2(dy, dx) - aimAngle();
+    if (Math.hypot(dx, dy) - r <= SLASH_RANGE && Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) <= SLASH_ARC / 2) return true;
+  }
+  return false;
 }
 
 // ---------- The turret by the campfire: it turns to the nearest bug in TURRET_RANGE it can see and,
@@ -1128,7 +1158,7 @@ function updateTurret(dt) {
   let target = null, best = Infinity;
   for (const b of bugs) { // (the nearest, with nothing solid in the way)
     const dx = b.x - turret.x, dy = b.y - turret.y, d = Math.hypot(dx, dy);
-    if (d > TURRET_RANGE || d >= best || rayHit(turret.x, turret.y, dx / d, dy / d, d) < d - 2) continue;
+    if (d > TURRET_RANGE || d >= best || rayHit(turret.x, turret.y, dx / d, dy / d, d, true) < d - 2) continue;
     target = b;
     best = d;
   }
@@ -1533,7 +1563,7 @@ function step(real) {
     spaceHit = attackPressed = false;
     heldAim ??= mouse && { ...mouse };
     render(clock, 0, realDt);
-    const box = talents.draw(canvas.width / 2, canvas.height / 2, points, mouse);
+    const box = talents.draw(canvas.width / 2, windowHead + 10, points, mouse); // (its top under the cards' line, as every window's)
     // Over it, as over the map: its name on the left, its key held down (it's open), and Esc to shut it on the right
     labels.tag('Talents', 'T', Math.round(box.left) - labels.keyWidth('T'), box.top - 10, 1);
     labels.tag('Close', 'Esc', Math.round(box.left + box.w) - labels.tagWidth('Close', 'Esc'), box.top - 10, keys.has('Escape') ? 1 : 0);
@@ -1545,7 +1575,7 @@ function step(real) {
     spaceHit = attackPressed = false;
     heldAim ??= mouse && { ...mouse };
     render(clock, 0, realDt);
-    const box = backpack.draw(canvas.width / 2, canvas.height / 2, { medkits });
+    const box = backpack.draw(canvas.width / 2, windowHead + 10, { medkits }); // (its top under the cards' line, as every window's)
     labels.tag('Backpack', 'B', Math.round(box.left) - labels.keyWidth('B'), box.top - 10, 1);
     labels.tag('Close', 'Esc', Math.round(box.left + box.w) - labels.tagWidth('Close', 'Esc'), box.top - 10, keys.has('Escape') ? 1 : 0);
     requestAnimationFrame(frame);
@@ -1595,20 +1625,28 @@ function step(real) {
   const holding = (!!near?.pickup || waking) && keys.has('KeyE') && !me.roll && !waitRelease;
   held = holding ? held + dt : Math.max(0, held - 2 * dt);
   me.squat = me.pick || waking ? 0 : held / HOLD_TIME;
-  // A click slashes with the knife in front (armed only), standing or on the move. The gait's clock
-  // restarts with it: the slash-on-the-move frames start the legs' cycle from its beginning, so after
-  // the slash the gait goes on from where they leave it
+  // A click slashes with the knife in front (armed only), standing or on the move. With the lunge's
+  // talent (to come: off for now) it's a lunge: he throws himself SLASH_RANGE forward along the aim (as it
+  // was then), most of the way by the cut (SLASH_LUNGE), so it lands from where he's got to, on all in his
+  // way (see inSlash). The gait's clock restarts with it
   const free = hasBackpack && !me.slash && !me.fire && !me.roll && !me.pick && me.squat === 0; // armed, hands free
   medkitCool = Math.max(0, medkitCool - dt);
   me.knifeCool = Math.max(0, (me.knifeCool ?? 0) - dt); // (seconds till the knife's ready again: a slash and SLASH_COOLDOWN after it)
   if (attackPressed && free && !drilling && !me.knifeCool) {
-    me.slash = { t: 0 };
+    const a = aimAngle();
+    me.slash = { t: 0, dx: Math.cos(a), dy: Math.sin(a), from: { x: me.x, y: me.y }, lunge: lunges() };
     me.knifeCool = SLASH_TIME + knifeWait();
     me.animOffset = -now;
     sounds.swish(SLASH_TIME * SLASH_CUT);
   }
   attackPressed = false;
-  if (me.slash && (me.slash.t += dt) >= SLASH_TIME) me.slash = null;
+  if (me.slash) { // the lunge: as far on as it's got through it (a roll takes him over, solid things stop him)
+    const was = me.slash.t;
+    me.slash.t += dt;
+    const go = SLASH_RANGE * (lunge(me.slash.t) - lunge(was));
+    if (me.slash.lunge && go > 0 && !me.roll && dt > 0) move(me, me.slash.dx, me.slash.dy, dt, go / dt);
+    if (me.slash.t >= SLASH_TIME) me.slash = null;
+  }
   if (me.slash && !me.slash.done && me.slash.t >= SLASH_TIME * SLASH_CUT) { // the cut: whatever it reaches is hit, once
     me.slash.done = true;
     const intoBag = bagInReach(), intoEgg = eggLife && eggInReach(), cutBugs = bugs.filter((b) => inSlash(b.x, b.y, BUG_R)); // (a copy: the dead drop out of bugs)
@@ -1677,7 +1715,7 @@ function step(real) {
   // roll (startRoll turns him). Without a cursor he looks where he runs.
   const aim = aimDirection();
   if (me.pick) updatePick(dt);
-  else if (!updateRoll(me, dt, rollWait())) {
+  else if (!updateRoll(me, dt)) {
     if (me.squat > 0) { if (near) me.dir = dirFromVector(near.x - me.x, near.y - me.y); } // turned to it
     else if (aim) me.dir = dirFromVector(aim.dx, aim.dy);
     else if (me.moving) me.dir = dirFromVector(dx, dy);
@@ -1708,7 +1746,7 @@ function step(real) {
     if (near.name === 'fellow') { // he speaks; before the hero's warmed himself by the fire, the old man sends him to it (not a talk yet)
       if (fellowAsked && hasEquipment && !equipmentReturned) { // (his equipment brought back: he has it, the quest to bring it done)
         equipmentReturned = true;
-        fellowSpeech.say('Oh, my equipment, at last! Now we can start working on the evacuation plan!');
+        fellowSpeech.say('Oh, my equipment! Something seems to be missing... Well, let’s get started on the evacuation plan!');
       } else if (equipmentReturned && !fellowThreatened) { // (the evacuation plan's on: his plan, what it was all for)
         fellowSpeech.say('What you brought is just junk... I was testing what you’re capable of!');
         planTold = true;
@@ -1740,7 +1778,7 @@ function step(real) {
     fellowAnswer.then();
     fellowAnswer = null;
   }
-  quests.update({ dt, running: me.moving && !me.roll, dx, dy, aim: aim && Math.atan2(aim.dy, aim.dx), hasBackpack, bottlesBroken, bagHits, talentsTaken: TALENTS.filter((tl) => talents.has(tl.id)).length, firesideUsed, fellowTalked, fellowAsked, hasEquipment, equipmentReturned, fellowThreatened, eggKilled });
+  quests.update({ dt, running: me.moving && !me.roll, dx, dy, aim: aim && Math.atan2(aim.dy, aim.dx), hasBackpack, bottlesBroken, bagHits, talentsTaken: TALENTS.filter((tl) => talents.has(tl.id)).length, firesideUsed, fellowTalked, fellowAsked, hasEquipment, equipmentReturned, fellowThreatened, eggKilled, eggReported });
   if (!fellowSeen && Math.hypot(fellowObj.x - me.x, fellowObj.y - me.y) < VISION) fellowSeen = true; // (on the map from now on)
   if (!stationSeen && Math.hypot(stationObj.x - me.x, stationObj.y - me.y) < VISION) stationSeen = true; // (seen: on the map from now on)
   for (const o of objects) if (o.breathes) o.frame = Math.floor((clock / 1000) * 1.3) % (sprites.object(o.name)?.frames ?? 1); // (breathing, slowly)
@@ -1790,6 +1828,10 @@ function step(real) {
       carry(c.solid);
     }
     if (strike.x !== undefined) carry(strike);
+    if (me.slash) { // (the lunge's start, and its way: turned with the rest)
+      carry(me.slash.from);
+      Object.assign(me.slash, { dx: me.slash.dx * c - me.slash.dy * s, dy: me.slash.dx * s + me.slash.dy * c });
+    }
     shots.carry(carry);
     me.x = SPAWN.x;
     me.y = SPAWN.y;
@@ -1852,6 +1894,16 @@ const FELLOW_ASKS = [{
     quests.start('hugeThing');
   },
 }, {
+  text: 'I smashed the huge thing!',
+  side: true, // (in blue: the side quest's)
+  minor: true, // (E's back while he answers: he can be cut off, the side quest done all the same)
+  when: () => eggKilled && !eggReported, // (once it's burst, till he's told him)
+  answer: 'You did what?! Well... I suppose it had it coming. Good riddance!',
+  then() { // the huge thing's quest done, its reward with it
+    eggReported = true;
+    eggReward();
+  },
+}, {
   text: 'You’re going to die now!',
   gold: true,
   answer: 'Take it easy! The real plan starts no! Closer to the equator I saw the wreckage of a ship. A teleportation device could be salvaged from it. That’s where to start, but be careful!',
@@ -1887,6 +1939,12 @@ function saveCheckpoint() {
     localStorage.setItem(CHECKPOINT, JSON.stringify({ level, xp, points, talents: talents.taken(), medkits, fellowAsked, equipment: hasEquipment, equipmentReturned, fellowThreatened, stationSeen, quests: quests.save() }));
   } catch { /* (no storage: nothing kept) */ }
 }
+// ?talents=runslash,quickknife (for testing): those talents had at once, a rank each time named, without
+// points (with a checkpoint or without; kept with it at the next one)
+function grantTalents() {
+  const ids = new URLSearchParams(location.search).get('talents')?.split(',').filter(Boolean) ?? [];
+  for (const id of new Set(ids)) talents.restore(Array(Math.max(0, ids.filter((o) => o === id).length - talents.rank(id))).fill(id)); // (up to as many ranks as named)
+}
 function loadCheckpoint() {
   let saved = null;
   try {
@@ -1901,7 +1959,8 @@ function loadCheckpoint() {
   quests.load(saved.quests);
   fellowAsked = saved.fellowAsked ?? quests.started('hugeThing'); // (the fellow's answer had: all it opened) (older checkpoints: by the quest it used to open too)
   fellowTalked = fellowAsked;
-  eggKilled = quests.finished('hugeThing'); // (burst before: only its pit there, its sector done)
+  eggKilled = quests.stepDone('hugeThing', 0); // (burst before: only its pit there, its sector done)
+  eggReported = quests.finished('hugeThing'); // (and the fellow told)
   if (eggKilled) eggGone();
   hasEquipment = !!saved.equipment; // (picked up before: its crate gone)
   equipmentReturned = !!saved.equipmentReturned; // (and handed back to the fellow)
@@ -1934,6 +1993,7 @@ function loadCheckpoint() {
   me.y = STRUCTURES.y + 1.6 * UNITS_PER_M;
 }
 loadCheckpoint();
+grantTalents();
 // (for now: he starts by the ship's wreck, south of it, wherever he'd have started)
 const START_AT_WRECK = false;
 if (START_AT_WRECK) {
@@ -1945,7 +2005,7 @@ requestAnimationFrame(frame);
 // ---------- Rendering ----------
 
 const GAIT_ANIM = { run: 'walk', back: 'back', left: 'strafeL', right: 'strafeR' }; // animations in sprites.json
-const SLASH_ANIM = { run: 'slashRun', back: 'slashBack', left: 'slashL', right: 'slashR' }; // the slash on the move
+const SLASH_ANIM = { run: 'slashRun', back: 'slashBack', left: 'slashL', right: 'slashR' }; // the slash on the move (no lunge)
 const SNEAK_ANIM = { run: 'sneak', back: 'sneakBack', left: 'sneakL', right: 'sneakR' }; // crouched, on the move
 const RELOAD_ANIM = { run: 'reloadRun', back: 'reloadBack', left: 'reloadL', right: 'reloadR' }; // reloading on the move (with the talent)
 const FIRE_ANIM = { stand: 'fire', run: 'fireRun', back: 'fireBack', left: 'fireStrafeL', right: 'fireStrafeR' }; // firing loops (+ the aim's -, '' or +)
@@ -2081,8 +2141,8 @@ function render(now, dt, talkDt = dt) {
     }
   }
   // The roll getting ready again: a ring inside his health's, two of its rings' steps in (there in a roll too)
-  const rollGone = me.roll ? me.roll.t : ROLL_TIME + rollWait() - (me.rollCooldown ?? 0); // (seconds since a roll started)
-  const rollCool = Math.max(0, 1 - rollGone / (ROLL_TIME + rollWait()));
+  const rollGone = me.roll ? me.roll.t : ROLL_TIME + ROLL_COOLDOWN - (me.rollCooldown ?? 0); // (seconds since a roll started)
+  const rollCool = Math.max(0, 1 - rollGone / (ROLL_TIME + ROLL_COOLDOWN));
   if (rollShown()) reach.roll(snap(camX + toScreenX(me.x)), snap(camY + toScreenY(me.y)), toScreenX(HEALTH_R) - 2 * RING_STEP, aimAngle() + Math.PI, rollCool, dt);
   // His health, a ring on the sand round him (there in a roll too, unlike the reach)
   reach.health(snap(camX + toScreenX(me.x)), snap(camY + toScreenY(me.y)), toScreenX(HEALTH_R), aimAngle() + Math.PI, me.hp, maxHp, strikeClock); // (the pulse on real time)
@@ -2100,7 +2160,7 @@ function render(now, dt, talkDt = dt) {
     // (squatting while E fills, the pick animation's way down follows the key)
     time: p.roll ? p.roll.t * 1000 : p.slash ? p.slash.t * 1000 : reloading(p) ? ammo.reload * (RELOAD_TIME / reloadTime()) * 1000 : p.fire && p.fire.phase !== 'loop' ? p.fire.t * 1000 : p.pick ? p.pick.t * 1000
       : p.squat > 0 ? p.squat * PICK_GRAB * PICK_TIME * 1000 : now + p.animOffset,
-    anim: p.roll ? 'roll' : p.slash ? crouched(p.moving ? SLASH_ANIM[p.gait] : 'slash')
+    anim: p.roll ? 'roll' : p.slash ? crouched(p.slash.lunge ? 'lunge' : p.moving ? SLASH_ANIM[p.gait] : 'slash')
       : reloading(p) ? crouched(p.moving ? RELOAD_ANIM[p.gait] : 'reload')
       : p.fire ? { in: crouched('aimIn'), loop: fireAnim(), out: crouched('aimOut') }[p.fire.phase]
       : p.pick || p.squat > 0 ? 'pick'
@@ -2133,7 +2193,7 @@ function render(now, dt, talkDt = dt) {
   const me0 = pose(me);
   // The cursor a crosshair while it's within his gun's range of him (drawn over everything, last); out
   // past it, or with a window open (the map, the journal, the talents) or no gun yet, it's there as ever
-  const pointing = mouse && hasBackpack && !mapOpen && !journalOpen && !talentsOpen && !backpackOpen && Math.hypot(mouse.x - me0.x, mouse.y - me0.y) < toScreenX(shotRange());
+  const pointing = mouse && hasBackpack && !mapOpen && !journalOpen && !talentsOpen && !backpackOpen; // (our own cursor: see the end of render)
   canvas.style.cursor = pointing ? 'none' : '';
   // An object in front of us that covers our body is drawn see-through
   const hidesMe = (o) => {
@@ -2168,7 +2228,7 @@ function render(now, dt, talkDt = dt) {
     // A big thing drawn in bands by how far down the ground each of its pixels stands (sprites.bands): each in
     // its place among the characters, so each bit of it is in front of them or behind them as it should be
     ...placed.filter((o) => !o.flat && sprites.bands(o.sprite ?? o.name)).flatMap((o) => sprites.bands(o.sprite ?? o.name).map((b) => ({ y: insideBy(o) ? me.y - 0.01 : o.y + b.y * UNITS_PER_M, draw: () => sprites.drawBand(ctx, o.sprite ?? o.name, b, o.sx, o.sy, o.y + b.y * UNITS_PER_M > me.y && hidesMe(o) ? 0.45 : 1) }))), // (the bits in front of him see-through, if it covers him)
-    ...placed.filter((o) => !o.flat && !sprites.bands(o.sprite ?? o.name)).map((o) => ({ y: o.footprint ? tallY(o) : o.y, draw: () => sprites.drawObject(ctx, o.sprite ?? o.name, 'body', o.sx, o.sy, hidesMe(o) ? 0.45 : 1, o.frame) })),
+    ...placed.filter((o) => !o.flat && !sprites.bands(o.sprite ?? o.name)).map((o) => ({ y: o.under ? -Infinity : o.footprint ? tallY(o) : o.y, draw: () => sprites.drawObject(ctx, o.sprite ?? o.name, 'body', o.sx, o.sy, hidesMe(o) ? 0.45 : 1, o.frame) })),
     ...players.map((p) => ({ y: p.y, draw: () => sprites.drawCharacter(ctx, p.sprite, pose(p)) })),
     ...bugs.map((b) => ({ y: b.y, draw: () => sprites.drawCharacter(ctx, 'bug', bugPose(b)) })),
     ...seenRavens.filter((r) => !r.h).map((r) => ({ y: r.y, draw: () => sprites.drawCharacter(ctx, 'raven', ravenPose(r)) })), // (on the ground)
@@ -2294,6 +2354,7 @@ function render(now, dt, talkDt = dt) {
   const lerp = (a, b) => a + (b - a) * k;
   const corner = { x: GLOBE_MARGIN + GLOBE_RADIUS, y: H - GLOBE_MARGIN - GLOBE_RADIUS, r: GLOBE_RADIUS };
   const big = { x: me0.x, y: me0.y, r: Math.min(toScreenX(VISION), Math.min(W, H) / 2 - 50) * 0.6 };
+  windowHead = Math.round(big.y - big.r - 10); // (the map's cards' line, open: every window's)
   const place = { x: lerp(corner.x, big.x), y: lerp(corner.y, big.y), r: lerp(corner.r, big.r), dot: lerp(3, 4), arrow: lerp(1, 1.8) };
   mapPlace = mapOpen && k >= 1 ? place : null;
   mapLook ??= mapPlace && here; // (open: from over him, till it's dragged)
@@ -2328,7 +2389,7 @@ function render(now, dt, talkDt = dt) {
   // The hotbar, once he has the backpack, at the bottom in the middle: the medkits (X: the wait after one), the roll (Space:
   // the roll and its wait after), the knife (its wait after a slash) and the gun (the reload; the rounds left)
   if (hasBackpack) hotbar.draw([
-    { key: 'X', icon: 'cross', held: keys.has('KeyX'), dim: !medkits, cool: medkitCool / MEDKIT_COOLDOWN }, // (how many are left: not shown for now)
+    { key: 'X', icon: 'cross', held: keys.has('KeyX'), dim: !medkits, cool: medkitCool / aidWait() }, // (how many are left: not shown for now)
     ...(rollShown() ? [{ key: 'Space', icon: 'roll', held: keys.has('Space'), cool: rollCool }] : []),
     { key: 'LMB', icon: 'fist', held: knifeHeld, cool: Math.min(1, (me.knifeCool ?? 0) / (SLASH_TIME + knifeWait())) },
     { key: 'RMB', icon: 'crosshair', held: triggerHeld, cool: ammo?.reload != null ? 1 - ammo.reload / reloadTime() : 0, count: ammo && ammo.reload == null ? ammo.mag : null },
@@ -2381,30 +2442,69 @@ function render(now, dt, talkDt = dt) {
     ctx.globalAlpha = jk;
     ctx.fillStyle = 'rgba(4, 3, 8, 0.92)';
     ctx.fillRect(0, 0, W, H);
-    const width = Math.min(460, W - 80), left = W / 2 - width / 2, top = Math.round(H * 0.42), head = top - 10; // (its cards' bottom, just over the one on now)
+    const width = Math.min(460, W - 80), left = W / 2 - width / 2, head = windowHead, top = head + 10; // (its cards' bottom, on every window's line, just over the one on now)
     const nameEnd = Math.round(left) + labels.tagWidth('Journal', 'J') - labels.keyWidth('J'), closeAt = Math.round(left + width) - labels.tagWidth('Close', 'Esc');
-    journal.draw(quests.list(), left, top, width, { x0: nameEnd + 10, x1: closeAt - 10, bottom: head, ceiling: 20 });
+    const scrolls = quests.list().some((q) => !q.on); // (the wheel's card only with something to scroll back to)
+    const scrollAt = closeAt + labels.keyWidth('Esc') - labels.keyWidth(WHEEL); // (over Close's, their edges lined up)
+    wheelFlash = Math.max(0, wheelFlash - talkDt / 0.25); // (real time: the game holds still under it)
+    journal.draw(quests.list(), left, top, width, { x0: nameEnd + 10, x1: Math.min(closeAt, scrolls ? scrollAt : closeAt) - 10, bottom: head, ceiling: 20, skip: journalSkip }, talkDt);
     labels.tag('Journal', 'J', Math.round(left) - labels.keyWidth('J'), head, 1);
+    if (scrolls) labels.tag('Scroll', WHEEL, scrollAt, head - 22 - 6, wheelFlash);
     labels.tag('Close', 'Esc', closeAt, head, keys.has('Escape') ? 1 : 0);
     ctx.restore();
   }
-  // The crosshair where the cursor is, within his gun's range (see pointing): the hotbar's, white,
-  // outlined in black as everything else on the HUD
+  // Our own cursor, armed with no window open (see pointing): a crosshair (four short ticks round a gap
+  // where it aims) in his gun's range, tilted over to an × in his knife's reach (turning as it goes), past it an
+  // arrow, rounded, the crosshair under it on its axis (it still aims there); all in white outlined in
+  // black, as everything else on the HUD
   if (pointing) {
     const x = Math.round(mouse.x) + 0.5, y = Math.round(mouse.y) + 0.5;
+    const d = Math.hypot(mouse.x - me0.x, mouse.y - me0.y), melee = d < toScreenX(SLASH_RANGE), far = d >= toScreenX(shotRange());
+    const outlined = () => { // the path so far, black under, white over
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    };
+    const ticks = (cx, cy, r0, r1, a = 0) => { // four short ticks round a gap (a: turned by, radians)
+      for (let i = 0; i < 4; i++) {
+        const dx = Math.cos(a + i * Math.PI / 2), dy = Math.sin(a + i * Math.PI / 2);
+        ctx.moveTo(cx + dx * r0, cy + dy * r0);
+        ctx.lineTo(cx + dx * r1, cy + dy * r1);
+      }
+    };
+    cursorTilt += ((melee ? 1 : 0) - cursorTilt) * (1 - Math.exp(-talkDt * 20)); // (tilting over in the knife's reach, back out of it: real time)
+    if (Math.abs((melee ? 1 : 0) - cursorTilt) < 0.01) cursorTilt = melee ? 1 : 0;
     ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineWidth = 4;
-    ICONS.crosshair(ctx, x, y); // (its path, then its outline over it)
-    ctx.strokeStyle = ctx.fillStyle = '#000';
-    ctx.stroke();
-    ctx.fillRect(x - 2.5, y - 2.5, 4, 4);
-    ctx.lineWidth = 1.5;
+    ctx.lineCap = ctx.lineJoin = 'round';
     ctx.beginPath();
-    ICONS.crosshair(ctx, x, y);
-    ctx.strokeStyle = ctx.fillStyle = '#fff';
-    ctx.stroke();
-    ctx.fillRect(x - 1.5, y - 1.5, 2, 2);
+    if (far) {
+      const s = 0.8; // (its size: a touch smaller than it's drawn below)
+      ticks(x + 19 * s, y + 19 * s, 3 * s, 7 * s); // (the crosshair under it, on its axis, behind its back, near its size)
+      outlined();
+      const arrow = new Path2D(); // (its tip on the cursor: a rounded triangle, its back a little hollowed)
+      arrow.moveTo(x, y);
+      arrow.lineTo(x + 4.5 * s, y + 16 * s);
+      arrow.lineTo(x + 8.6 * s, y + 8.6 * s);
+      arrow.lineTo(x + 16 * s, y + 4.5 * s);
+      arrow.closePath();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetY = 1;
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 5;
+      ctx.stroke(arrow); // (its outline, and its shadow)
+      ctx.shadowColor = 'transparent';
+      ctx.strokeStyle = ctx.fillStyle = '#fff';
+      ctx.lineWidth = 2; // (its corners rounded)
+      ctx.stroke(arrow);
+      ctx.fill(arrow);
+    } else {
+      ticks(x, y, 3, 8, cursorTilt * Math.PI / 4); // (in the knife's reach: tilted over, an ×)
+      outlined();
+    }
     ctx.restore();
   }
 }

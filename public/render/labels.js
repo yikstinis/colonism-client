@@ -13,6 +13,7 @@ export const PLATE = 'rgba(0, 0, 0, 0.7)', EDGE = 'rgba(255, 255, 255, 0.35)';
 export const GOLD = '#e6be5a', GOLD_EDGE = 'rgba(230, 190, 90, 0.6)'; // what matters most (a warning; the main quest's card, in index.html)
 export const BLUE = '#6cb8e6', BLUE_EDGE = 'rgba(108, 184, 230, 0.6)'; // a side quest's (its card, in index.html; its arrow, its mark on the map)
 const KEY_SIZE = 18; // px: the key's plate, whatever the card's height (at its top)
+export const WHEEL = 'Wheel'; // a key that's the mouse's wheel: drawn as a little mouse, not by name
 export const GAP = 14; // px from the top of a thing (or a character) up to the bottom of what's stacked over it: the same for all
 export const HOLD_TIME = 0.45; // seconds E is held to pick something up (0: a press does it)
 
@@ -26,7 +27,18 @@ export function createLabels(ctx) {
     ctx.font = font;
     return ctx.measureText(str).width;
   };
-  const keyWidth = (key) => Math.max(KEY_SIZE, Math.round(width(key, KEY) + 12));
+  const keyWidth = (key) => (key === WHEEL ? KEY_SIZE : Math.max(KEY_SIZE, Math.round(width(key, KEY) + 12)));
+  // The mouse's wheel, drawn in place of a key's name (WHEEL): a mouse, its wheel a short bar at the top
+  function wheel(cx, cy, color) {
+    ctx.save();
+    ctx.strokeStyle = ctx.fillStyle = color;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.roundRect(Math.round(cx) - 4, Math.round(cy) - 6.5, 8, 13, 4);
+    ctx.stroke();
+    ctx.fillRect(Math.round(cx) - 0.75, Math.round(cy) - 4, 1.5, 3.5);
+    ctx.restore();
+  }
   // Left-aligned text, centered on cy by the capitals' height
   function text(str, font, x, cy, color) {
     ctx.font = font;
@@ -74,7 +86,7 @@ export function createLabels(ctx) {
   // count: a small line on a smaller white-edged plate out from under the key to its left ('0/4')
   function prompt(edge, cardTop, cardH, open, hold, key, gold = false, goldName = false, count = '', side = false, sideName = false) { // gold: edged and filled in gold; goldName: its name too; side, sideName: the same in blue
     const s = KEY_SIZE, kw = keyWidth(key), left = edge - Math.round(kw * open), top = cardTop + 2, cy = top + s / 2 - 0.5;
-    const letter = (color) => text(key, KEY, left + kw / 2 - width(key, KEY) / 2, cy, color);
+    const letter = (color) => (key === WHEEL ? wheel(left + kw / 2, cy, color) : text(key, KEY, left + kw / 2 - width(key, KEY) / 2, cy, color));
     const plate = new Path2D();
     plate.roundRect(left, top, kw, s, [5, 0, 0, 5]); // rounded on the left, square where it meets the card
     if (count && open >= 1) { // (cut by the key's outline: it seems to come from under it)

@@ -13,7 +13,7 @@ import { ramp, rng, Sheet } from './lib/image.mjs';
 import { SHADOW_LIGHT, bodySdf, box, capsule, cone, ellipsoid, renderBody, renderShadow } from './lib/sdf-body.mjs';
 import {
   AIM_IN_TIME, AIM_OFFSETS, AIM_OUT_TIME, BACKPACK, BUG_BITE_SNAP, BUG_BITE_TIME, RELOAD_TIME, CROUCH_CYCLE, BED, BEDDING, BEDDING_FIRES, BLANKET, FIRE_ROUNDS, GAIT_CYCLE, GLADE_R, MATTRESS, PICK_GRAB,
-  CRATER_R, PICK_TIME, PILLOW, POD, POD_FIRES, POD_SCALE, ROLL_TIME, STRIKE_SLANT, STRIKE_WAY, SLASH_TIME, STAND, TURRET_FRAMES, GARAGE, GARAGE_SIZE, GARAGE_LEAF, EGG_R, WRECK_PIECES, WRECK_SHIP, WRECK_SHOWN, wreckJag, CONTAINER_KINDS, FISSURE_KINDS, fissurePoints, fissureWidth, VOLCANO_KINDS, FENCE, FENCE_YAWS, FENCE_KINDS, FENCE_LEANS, BARREL_R, SAFE_RECT, GARDEN, EGG_SAFE_R, STATION_SAFE_R, TRANSFORMER_SIZE, POD_SAFE_R, BACKPACK_SAFE_R, UNITS_PER_M,
+  CRATER_R, PICK_TIME, PILLOW, POD, POD_FIRES, POD_SCALE, ROLL_TIME, STRIKE_SLANT, STRIKE_WAY, SLASH_TIME, SLASH_LUNGE, STAND, TURRET_FRAMES, GARAGE, GARAGE_SIZE, GARAGE_LEAF, EGG_R, WRECK_PIECES, WRECK_SHIP, WRECK_SHOWN, wreckJag, CONTAINER_KINDS, FISSURE_KINDS, fissurePoints, fissureWidth, VOLCANO_KINDS, FENCE, FENCE_YAWS, FENCE_KINDS, FENCE_LEANS, BARREL_R, SAFE_RECT, GARDEN, EGG_SAFE_R, STATION_SAFE_R, TRANSFORMER_SIZE, POD_SAFE_R, BACKPACK_SAFE_R, UNITS_PER_M,
 } from '../shared/world.js';
 
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/assets');
@@ -713,9 +713,8 @@ function progress(name, total, unit) {
 function heroAnims(packed = false) {
   const cycle = (i, n) => (i / n) * Math.PI * 2;
   // The armed animations, standing up (crouch 0) or crouched (1, 'c' before the name; sneaking on
-  // the move, the legs' cycle CROUCH_CYCLE). The knife: a slash (played once over SLASH_TIME),
-  // standing and in each gait, the legs going on from the start of their cycle (the game restarts
-  // the gait's clock with the slash, so the run picks up where it leaves it). The gun: brought up and
+  // the move, the legs' cycle CROUCH_CYCLE). The knife: a slash (played once over SLASH_TIME) in a
+  // lunge, a long step forward (with its talent; without, where he is, standing or in each gait). The gun: brought up and
   // lowered; firing loops, standing and in each gait, FIRE_ROUNDS rounds over the gait's cycle (the
   // legs keep step), each with an aim turned to AIM_OFFSETS: the game picks the nearest to where it
   // aims, and has the muzzle in the manifest
@@ -724,12 +723,17 @@ function heroAnims(packed = false) {
     const cycleOf = (gait) => (gait === 'stand' ? GAIT_CYCLE.stand : crouch ? CROUCH_CYCLE : GAIT_CYCLE[gait]);
     const aim = (k) => ({ aim: k, kick: 0, off: 0 });
     return [
+      // (the lunge: one long running step, the knife side's leg out in front, from its push-off behind
+      // (half the run's cycle on) to its landing, eased as the game moves him (SLASH_LUNGE), then held)
+      // (without it, a slash where he is: standing, or in each gait with the legs going on from the start
+      // of their cycle: the game restarts the gait's clock with it, so the run picks up where it leaves it)
       [c + 'slash', SLASH, SLASH / SLASH_TIME, (i, yaw) => body(0, false, 0, yaw, packed, 'run', 0, i / SLASH, crouch)],
       ...[['slashRun', 'run'], ['slashBack', 'back'], ['slashL', 'left'], ['slashR', 'right']].map(([anim, gait]) => [c + anim, SLASH, SLASH / SLASH_TIME,
         (i, yaw) => body(Math.PI * 2 * ((i / SLASH) * SLASH_TIME) / cycleOf(gait), true, 0, yaw, packed, gait, 0, i / SLASH, crouch)]),
+      [c + 'lunge', SLASH, SLASH / SLASH_TIME, (i, yaw) => body(Math.PI * (1 + smoothstep(0, SLASH_LUNGE, (i + 0.5) / SLASH)), true, 0, yaw, packed, 'run', 0, i / SLASH, crouch)],
       [c + 'aimIn', AIM_FRAMES, AIM_FRAMES / AIM_IN_TIME, (i, yaw) => body(0, false, 0, yaw, packed, 'run', 0, null, crouch, aim(smoothstep(0, 1, (i + 1) / AIM_FRAMES)))],
       [c + 'reload', RELOAD, RELOAD / RELOAD_TIME, (i, yaw) => body(0, false, 0, yaw, packed, 'run', 0, null, crouch, null, (i + 0.5) / RELOAD)],
-      // (on the move, in each gait: the legs going on from the start of their cycle, as with a slash)
+      // (on the move, in each gait: the legs going on from the start of their cycle)
       ...[['reloadRun', 'run'], ['reloadBack', 'back'], ['reloadL', 'left'], ['reloadR', 'right']].map(([anim, gait]) => [c + anim, RELOAD_RUN, RELOAD_RUN / RELOAD_TIME,
         (i, yaw) => body(Math.PI * 2 * ((i / RELOAD_RUN) * RELOAD_TIME) / cycleOf(gait), true, 0, yaw, packed, gait, 0, null, crouch, null, (i + 0.5) / RELOAD_RUN)]),
       [c + 'aimOut', AIM_FRAMES, AIM_FRAMES / AIM_OUT_TIME, (i, yaw) => body(0, false, 0, yaw, packed, 'run', 0, null, crouch, aim(1 - smoothstep(0, 1, (i + 1) / AIM_FRAMES)))],
@@ -753,9 +757,6 @@ function heroAnims(packed = false) {
     ['crouch', CROUCH_LOOP, 2, (i, yaw) => body(0, false, (1 - Math.cos(cycle(i, CROUCH_LOOP))) / 2, yaw, packed, 'run', 0, null, 1)],
     ...[['sneak', 'run'], ['sneakBack', 'back'], ['sneakL', 'left'], ['sneakR', 'right']].map(([anim, gait]) =>
       [anim, SNEAK, SNEAK / SNEAK_CYCLE, (i, yaw) => body(cycle(i, SNEAK), true, 0, yaw, packed, gait, 0, null, 1)]),
-    // Armed, a knife slash (played once over SLASH_TIME), standing and in each gait: the legs go on
-    // from the start of their cycle (the game restarts the gait's clock with the slash, so the run
-    // picks up where the slash leaves it)
     // Armed: the knife and the gun, standing up and crouched ('c' before the name)
     ...(packed ? [0, 1].flatMap(armed) : []),
   ];

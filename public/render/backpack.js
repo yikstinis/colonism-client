@@ -40,11 +40,12 @@ export function createBackpack(ctx) {
     ctx.fillText(name, x + SLOT / 2, y + SLOT + CAPTION / 2 + 1);
   };
   return {
-    // The window, its middle at (cx, cy); medkits: how many he has. Its name and what shuts it go over
-    // it, on the HUD's cards (see client.js): returns its box { left, top, w, h }
-    draw(cx, cy, { medkits }) {
+    // The window, its middle across at cx, its top at y (as every window's: see client.js); medkits: how
+    // many he has. Its name and what shuts it go over it, on the HUD's cards (see client.js): returns its
+    // box { left, top, w, h }
+    draw(cx, y, { medkits }) {
       const w = W, h = HEAD + SLOT + CAPTION + PAD;
-      const left = Math.round(cx - w / 2) + 0.5, top = Math.round(cy - h / 2) + 0.5;
+      const left = Math.round(cx - w / 2) + 0.5, top = Math.round(y) + 0.5;
       ctx.save();
       ctx.fillStyle = 'rgba(4, 3, 8, 0.6)'; // the world dimmed behind it
       ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);

@@ -14,8 +14,8 @@ export const TALENTS = [
   { id: 'runfire', name: 'Shoot on the move', text: 'Fire the gun without stopping', row: 0 },
   { id: 'runreload', name: 'Reload on the move', text: 'Keep reloading while running', row: 0 },
   { id: 'quickknife', name: 'Quick knife', text: '-1% of the knife\'s wait', row: 1, ranks: 5, needs: 'runslash' },
-  { id: 'quickroll', name: 'Quick roll', text: '-1% of the roll\'s wait', row: 1, ranks: 5, needs: 'runfire' },
   { id: 'quickreload', name: 'Quick reload', text: '-1% of the reload\'s time', row: 1, ranks: 5, needs: 'runreload' },
+  { id: 'quickaid', name: 'Quick aid', text: '-1% of the medkit\'s wait', row: 1, ranks: 5 },
 ];
 const ranksOf = (t) => t.ranks ?? 1;
 // Points all the talents can take, all their ranks (a level for each: see client.js)
@@ -39,7 +39,10 @@ export function createTalents(ctx) {
     // The ones taken (an id for each rank of it), to keep; and putting them back
     taken: () => [...taken].flatMap(([id, n]) => Array(n).fill(id)),
     restore(ids) {
-      for (const id of ids) taken.set(id, rank(id) + 1);
+      for (let id of ids) {
+        if (id === 'quickroll' || id === 'longshot') id = 'quickaid'; // (talents gone: their points kept, in the one that took their place)
+        taken.set(id, rank(id) + 1);
+      }
     },
     // Takes the talent under screen point (x, y) if it can be (points: how many he has to spend):
     // returns it, or null
@@ -51,12 +54,13 @@ export function createTalents(ctx) {
       return t;
     },
 
-    // The window, its middle at (cx, cy): points to spend; mouse: the cursor ({ x, y } or null). Its name
-    // and what shuts it go over it, on the HUD's cards (see client.js): returns its box { left, top, w, h }
-    draw(cx, cy, points, mouse) {
+    // The window, its middle across at cx, its top at y (as every window's: see client.js): points to
+    // spend; mouse: the cursor ({ x, y } or null). Its name and what shuts it go over it, on the HUD's
+    // cards (see client.js): returns its box { left, top, w, h }
+    draw(cx, y, points, mouse) {
       const rows = [0, 1].map((r) => TALENTS.filter((t) => t.row === r)).filter((r) => r.length), most = Math.max(...rows.map((r) => r.length));
       const w = PAD * 2 + most * CARD_W + (most - 1) * GAP, h = HEAD + rows.length * CARD_H + (rows.length - 1) * GAP + PAD;
-      const left = Math.round(cx - w / 2) + 0.5, top = Math.round(cy - h / 2) + 0.5;
+      const left = Math.round(cx - w / 2) + 0.5, top = Math.round(y) + 0.5;
       ctx.save();
       ctx.fillStyle = 'rgba(4, 3, 8, 0.6)'; // the world dimmed behind it
       ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);

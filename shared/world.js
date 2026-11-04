@@ -24,6 +24,9 @@ export const PICK_GRAB = 0.5;
 // A knife slash (armed, with the left mouse button), standing or on the move
 export const SLASH_TIME = 0.35; // seconds
 export const SLASH_COOLDOWN = 1; // seconds after a slash before the next can start
+// A slash is a lunge: the hero throws himself SLASH_RANGE forward, along the aim, done this far through
+// it (0..1, eased in and out: the step lands as the blade's mid-sweep; see client.js and the art's lunge)
+export const SLASH_LUNGE = 0.65;
 
 // Facing: 8 directions, 0 = +y in world (down the screen, towards the camera), counting towards +x
 export const DIR_COUNT = 8;
@@ -193,7 +196,8 @@ const BACKPACK_SOLID = { x: BACKPACK.x, y: BACKPACK.y, r: 0.35 * UNITS_PER_M, of
 // picked up), flat (lies flat on the ground: drawn under the characters), later (not there at first: put down later); and what E does with it: pickup (hold E to pick it up; the hero says pickupSay then) or
 // say (a press makes the hero say this); heals (a press gives him all his health back); footprint
 // ([half width, half depth] meters, in its model: a big thing, drawn in front of or behind the hero by
-// where it reaches to, not by its middle); breathes (its sprite's frames played round, slowly) }
+// where it reaches to, not by its middle); under (low, standing up off the ground a little: drawn under
+// all that stands, whichever side of it they are: first, before the rest); breathes (its sprite's frames played round, slowly) }
 export const OBJECTS = [
   {
     name: 'pod', x: POD.x, y: POD.y, yaw: POD.yaw, label: 'Escape pod', solid: POD_SOLID,
@@ -235,8 +239,9 @@ const STRUCTURES_WEST = 0.25 * PLANET_M, STRUCTURES_SOUTH = 0.3 * PLANET_M; // m
 const backpackHome = toSphere(CHART0, BACKPACK.x - SPAWN.x, BACKPACK.y - SPAWN.y, PLANET_R);
 export const STRUCTURES = { label: 'Safe space', home: toSphere(northChart(backpackHome, POLE, [0, 1, 0]), -STRUCTURES_WEST * UNITS_PER_M, STRUCTURES_SOUTH * UNITS_PER_M, PLANET_R) };
 Object.assign(STRUCTURES, chartPoint(CHART0, STRUCTURES.home)); // (its x, y on the chart, kept there as the objects')
-// The safe space's campfire, burning right there: low (struck and shot over), not walked through
-const CAMPFIRE_SOLID = { x: STRUCTURES.x, y: STRUCTURES.y, r: 0.55 * UNITS_PER_M, of: 'campfire' };
+// The safe space's campfire, burning right there: not walked through; it stops his shots and his knife's
+// reach (low: the turret's fire goes over it)
+const CAMPFIRE_SOLID = { x: STRUCTURES.x, y: STRUCTURES.y, r: 0.55 * UNITS_PER_M, cover: true, low: true, of: 'campfire' };
 OBJECTS.push({ name: 'campfire', x: STRUCTURES.x, y: STRUCTURES.y, label: STRUCTURES.label, solid: CAMPFIRE_SOLID, heals: true, say: 'A prehistoric way to keep warm... Barbaric, but it works! Where does he get wood?' });
 OBSTACLES.push(CAMPFIRE_SOLID);
 // By it, an automatic turret: a machine gun on a tripod that turns to the nearest bug in TURRET_RANGE
@@ -265,10 +270,10 @@ const LEAF_FOOT = GARAGE_LEAF[0] + 1.5 * Math.sin(0.42), LEAF_HALF = 0.64; // me
 OBSTACLES.push(...solidRect({ ...GARAGE, name: 'garage' }, 0, GARAGE_SIZE[0], LEAF_FOOT + 0.2, GARAGE_LEAF[1] - LEAF_HALF - 0.12, GARAGE_LEAF[1] + LEAF_HALF + 0.12));
 // A little garden bed by its right wall, the fellow's: a frame of planks, dug earth, two rows of
 // something green coming up (meters, in its model: its middle; its half width and length), along the
-// wall; it stops the hero (low: shot over)
+// wall; it stops the hero, his shots and his knife's reach (low: the turret's fire goes over it)
 export const GARDEN = { at: [GARAGE_SIZE[0] + 1.15, -1.1], half: [0.5, 1.0] };
-OBJECTS.push({ name: 'garden', ...modelToWorld(GARAGE, GARDEN.at), yaw: GARAGE.yaw, footprint: [...GARDEN.half, 0.4] });
-OBSTACLES.push(...solidRect({ ...GARAGE, name: 'garden', ...modelToWorld(GARAGE, GARDEN.at) }, 0, -GARDEN.half[0] - 0.05, GARDEN.half[0] + 0.05, -GARDEN.half[1] - 0.05, GARDEN.half[1] + 0.05, null, false));
+OBJECTS.push({ name: 'garden', ...modelToWorld(GARAGE, GARDEN.at), yaw: GARAGE.yaw, under: true }); // (low: whoever's by it drawn over it)
+OBSTACLES.push(...solidRect({ ...GARAGE, name: 'garden', ...modelToWorld(GARAGE, GARDEN.at) }, 0, -GARDEN.half[0] - 0.05, GARDEN.half[0] + 0.05, -GARDEN.half[1] - 0.05, GARDEN.half[1] + 0.05).map((ob) => ({ ...ob, low: true })));
 // A rusty steel drum by its front corner, on the gates' hinge side (meters, in its model): no getting in
 // to the corner there; it stops the hero, and shots
 export const BARREL_R = 0.3; // meters: its radius (the art draws it so)
@@ -487,7 +492,7 @@ OBSTACLES.push(EQUIPMENT_SOLID);
 // carries the station's name (it goes on the map once he's come up to it: see client.js)
 export const STATION = { label: 'Research station' };
 const ANTENNA_SOLID = { x: EQUIPMENT.x - 1.05 * UNITS_PER_M, y: EQUIPMENT.y - 2.6 * UNITS_PER_M, r: 0.42 * UNITS_PER_M, cover: true, of: 'antenna' };
-OBJECTS.push({ name: 'antenna', x: ANTENNA_SOLID.x, y: ANTENNA_SOLID.y, label: STATION.label, solid: ANTENNA_SOLID, say: 'A strange place for research...' });
+OBJECTS.push({ name: 'antenna', x: ANTENNA_SOLID.x, y: ANTENNA_SOLID.y, label: STATION.label, solid: ANTENNA_SOLID, say: 'I wonder what he was researching here...' });
 OBSTACLES.push(ANTENNA_SOLID);
 export const TRANSFORMER_SIZE = [0.55, 0.4]; // meters: its cabinet's half width (x), half depth (y)
 const TRANSFORMER = { x: ANTENNA_SOLID.x + 1.75 * UNITS_PER_M, y: ANTENNA_SOLID.y + 0.25 * UNITS_PER_M, yaw: 0 };
@@ -691,11 +696,12 @@ export function recenter(chart, x, y) {
   return { chart: next, turn: Math.atan2(east.y, east.x) };
 }
 // How far (world units) a ray from (x, y) along the unit (dx, dy) goes before it meets something
-// giving cover, up to max: where a shot stops, how far a blade reaches
-export function rayHit(x, y, dx, dy, max) {
+// giving cover, up to max: where a shot stops, how far a blade reaches. over: firing from up high (the
+// turret), over the low ones (the campfire, the garden bed)
+export function rayHit(x, y, dx, dy, max, over = false) {
   let best = max;
   for (const o of OBSTACLES) {
-    if (!o.cover) continue;
+    if (!o.cover || (over && o.low)) continue;
     if (o.poly) { // a polygon: where the ray goes into it (clipped against each of its sides)
       let t0 = 0, t1 = best, turn = 0;
       for (let i = 0; i < o.poly.length && t0 <= t1; i++) {
@@ -805,7 +811,7 @@ export function startRoll(p, dx, dy) {
   return true;
 }
 
-export function updateRoll(p, dt, cooldown = ROLL_COOLDOWN) { // (cooldown: the wait after it, seconds: shorter with a talent)
+export function updateRoll(p, dt, cooldown = ROLL_COOLDOWN) { // (cooldown: the wait after it, seconds)
   if (!p.roll) {
     p.rollCooldown = Math.max(0, (p.rollCooldown ?? 0) - dt);
     return false;

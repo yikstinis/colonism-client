@@ -213,43 +213,48 @@
           "frames": 10,
           "fps": 28.571428571428573
         },
-        "aimIn": {
+        "lunge": {
           "start": 174,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "aimIn": {
+          "start": 184,
           "frames": 4,
           "fps": 40
         },
         "reload": {
-          "start": 178,
+          "start": 188,
           "frames": 12,
           "fps": 8
         },
         "reloadRun": {
-          "start": 190,
+          "start": 200,
           "frames": 24,
           "fps": 16
         },
         "reloadBack": {
-          "start": 214,
+          "start": 224,
           "frames": 24,
           "fps": 16
         },
         "reloadL": {
-          "start": 238,
+          "start": 248,
           "frames": 24,
           "fps": 16
         },
         "reloadR": {
-          "start": 262,
+          "start": 272,
           "frames": 24,
           "fps": 16
         },
         "aimOut": {
-          "start": 286,
+          "start": 296,
           "frames": 4,
           "fps": 33.333333333333336
         },
         "fire-": {
-          "start": 290,
+          "start": 300,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -259,7 +264,7 @@
           ]
         },
         "fire": {
-          "start": 300,
+          "start": 310,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -269,7 +274,7 @@
           ]
         },
         "fire+": {
-          "start": 310,
+          "start": 320,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -279,7 +284,7 @@
           ]
         },
         "fireRun-": {
-          "start": 320,
+          "start": 330,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -289,7 +294,7 @@
           ]
         },
         "fireRun": {
-          "start": 330,
+          "start": 340,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -299,7 +304,7 @@
           ]
         },
         "fireRun+": {
-          "start": 340,
+          "start": 350,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -309,7 +314,7 @@
           ]
         },
         "fireBack-": {
-          "start": 350,
+          "start": 360,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -319,7 +324,7 @@
           ]
         },
         "fireBack": {
-          "start": 360,
+          "start": 370,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -329,7 +334,7 @@
           ]
         },
         "fireBack+": {
-          "start": 370,
+          "start": 380,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -339,7 +344,7 @@
           ]
         },
         "fireStrafeL-": {
-          "start": 380,
+          "start": 390,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -349,7 +354,7 @@
           ]
         },
         "fireStrafeL": {
-          "start": 390,
+          "start": 400,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -359,7 +364,7 @@
           ]
         },
         "fireStrafeL+": {
-          "start": 400,
+          "start": 410,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -369,7 +374,7 @@
           ]
         },
         "fireStrafeR-": {
-          "start": 410,
+          "start": 420,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -379,7 +384,7 @@
           ]
         },
         "fireStrafeR": {
-          "start": 420,
+          "start": 430,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -389,7 +394,7 @@
           ]
         },
         "fireStrafeR+": {
-          "start": 430,
+          "start": 440,
           "frames": 10,
           "fps": 22.22222222222222,
           "muzzle": [
@@ -399,67 +404,72 @@
           ]
         },
         "cslash": {
-          "start": 440,
-          "frames": 10,
-          "fps": 28.571428571428573
-        },
-        "cslashRun": {
           "start": 450,
           "frames": 10,
           "fps": 28.571428571428573
         },
-        "cslashBack": {
+        "cslashRun": {
           "start": 460,
           "frames": 10,
           "fps": 28.571428571428573
         },
-        "cslashL": {
+        "cslashBack": {
           "start": 470,
           "frames": 10,
           "fps": 28.571428571428573
         },
-        "cslashR": {
+        "cslashL": {
           "start": 480,
           "frames": 10,
           "fps": 28.571428571428573
         },
-        "caimIn": {
+        "cslashR": {
           "start": 490,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "clunge": {
+          "start": 500,
+          "frames": 10,
+          "fps": 28.571428571428573
+        },
+        "caimIn": {
+          "start": 510,
           "frames": 4,
           "fps": 40
         },
         "creload": {
-          "start": 494,
+          "start": 514,
           "frames": 12,
           "fps": 8
         },
         "creloadRun": {
-          "start": 506,
+          "start": 526,
           "frames": 24,
           "fps": 16
         },
         "creloadBack": {
-          "start": 530,
+          "start": 550,
           "frames": 24,
           "fps": 16
         },
         "creloadL": {
-          "start": 554,
+          "start": 574,
           "frames": 24,
           "fps": 16
         },
         "creloadR": {
-          "start": 578,
+          "start": 598,
           "frames": 24,
           "fps": 16
         },
         "caimOut": {
-          "start": 602,
+          "start": 622,
           "frames": 4,
           "fps": 33.333333333333336
         },
         "cfire-": {
-          "start": 606,
+          "start": 626,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -469,7 +479,7 @@
           ]
         },
         "cfire": {
-          "start": 616,
+          "start": 636,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -479,7 +489,7 @@
           ]
         },
         "cfire+": {
-          "start": 626,
+          "start": 646,
           "frames": 10,
           "fps": 20,
           "muzzle": [
@@ -489,7 +499,7 @@
           ]
         },
         "cfireRun-": {
-          "start": 636,
+          "start": 656,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -499,7 +509,7 @@
           ]
         },
         "cfireRun": {
-          "start": 646,
+          "start": 666,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -509,7 +519,7 @@
           ]
         },
         "cfireRun+": {
-          "start": 656,
+          "start": 676,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -519,7 +529,7 @@
           ]
         },
         "cfireBack-": {
-          "start": 666,
+          "start": 686,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -529,7 +539,7 @@
           ]
         },
         "cfireBack": {
-          "start": 676,
+          "start": 696,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -539,7 +549,7 @@
           ]
         },
         "cfireBack+": {
-          "start": 686,
+          "start": 706,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -549,7 +559,7 @@
           ]
         },
         "cfireStrafeL-": {
-          "start": 696,
+          "start": 716,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -559,7 +569,7 @@
           ]
         },
         "cfireStrafeL": {
-          "start": 706,
+          "start": 726,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -569,7 +579,7 @@
           ]
         },
         "cfireStrafeL+": {
-          "start": 716,
+          "start": 736,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -579,7 +589,7 @@
           ]
         },
         "cfireStrafeR-": {
-          "start": 726,
+          "start": 746,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -589,7 +599,7 @@
           ]
         },
         "cfireStrafeR": {
-          "start": 736,
+          "start": 756,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
@@ -599,7 +609,7 @@
           ]
         },
         "cfireStrafeR+": {
-          "start": 746,
+          "start": 766,
           "frames": 10,
           "fps": 12.5,
           "muzzle": [
